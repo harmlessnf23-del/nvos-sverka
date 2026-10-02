@@ -1,0 +1,1384 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Сверка ДПНВОС, реестра ОНВОС и ДВОС по выбросам и сбросам с отчётом в Excel. Файлы обрабатываются в браузере.">
+<style>html{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Сверка НВОС</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: дашборд — тёмная боковая панель (вид воздействия, категория, параметры) + рабочая область: шаги-документы, KPI, таблицы */
+:root{
+  --bg:#F3F6F4; --surface:#FFFFFF; --surface-2:#EEF2F0; --fg:#0F1A16; --muted:#5E6B66; --line:#E0E6E3;
+  --accent:#0F7B5F; --accent-fg:#FFFFFF; --accent-soft:#E2F2EB;
+  --err:#C2372B; --err-soft:#FBE7E4; --warn:#A5650A; --warn-soft:#FBF0DA; --ok:#1F8150; --ok-soft:#E1F3E8; --skip:#6A7470; --skip-soft:#ECEFED;
+  --side-bg:#0E1A16; --side-fg:#E7EFEB; --side-muted:#8DA198; --side-line:#1F2E28; --side-hi:#172621; --side-acc:#3FD3A2; --side-acc-soft:rgba(63,211,162,.12);
+  --shadow:0 1px 2px rgba(15,26,22,.05),0 4px 16px rgba(15,26,22,.04);
+  --f-ui:"Onest","Golos Text",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  --r:12px; --r-s:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0B1210; --surface:#111A17; --surface-2:#17221E; --fg:#E6EDEA; --muted:#93A39C; --line:#22302B;
+  --accent:#34C79A; --accent-fg:#06110D; --accent-soft:#11302A;
+  --err:#F27D72; --err-soft:#371C19; --warn:#E8AE4C; --warn-soft:#352914; --ok:#62C98E; --ok-soft:#14301F; --skip:#8E9A95; --skip-soft:#1C2622;
+  --side-bg:#070D0B; --side-line:#18241F; --side-hi:#111C18;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0B1210; --surface:#111A17; --surface-2:#17221E; --fg:#E6EDEA; --muted:#93A39C; --line:#22302B;
+  --accent:#34C79A; --accent-fg:#06110D; --accent-soft:#11302A;
+  --err:#F27D72; --err-soft:#371C19; --warn:#E8AE4C; --warn-soft:#352914; --ok:#62C98E; --ok-soft:#14301F; --skip:#8E9A95; --skip-soft:#1C2622;
+  --side-bg:#070D0B; --side-line:#18241F; --side-hi:#111C18;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;text-wrap:balance}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+svg{flex:none}
+
+/* ---------- каркас ---------- */
+.app{display:grid;grid-template-columns:272px minmax(0,1fr);min-height:100vh}
+.side{background:var(--side-bg);color:var(--side-fg);padding:20px 16px;display:flex;flex-direction:column;gap:22px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.brand{display:flex;gap:10px;align-items:center;padding:2px 6px}
+.brand .mark{width:34px;height:34px;border-radius:10px;background:var(--side-acc-soft);color:var(--side-acc);display:grid;place-items:center}
+.brand b{display:block;font-size:15px;letter-spacing:-.01em}
+.brand small{display:block;color:var(--side-muted);font-size:11.5px}
+.side-sec{display:flex;flex-direction:column;gap:6px}
+.side-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--side-muted);font-weight:600;padding:0 8px;margin-bottom:2px}
+.nav-item{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:var(--side-muted);padding:9px 10px;border-radius:var(--r-s);cursor:pointer;font-weight:500;text-align:left;width:100%}
+.nav-item:hover{background:var(--side-hi);color:var(--side-fg)}
+.nav-item[aria-pressed="true"]{background:var(--side-acc-soft);color:var(--side-fg)}
+.nav-item[aria-pressed="true"] svg{color:var(--side-acc)}
+.cat{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:var(--side-fg);padding:7px 8px;border-radius:var(--r-s);cursor:pointer;text-align:left;width:100%;min-width:0}
+.cat:hover{background:var(--side-hi)}
+.cat .roman{width:34px;height:30px;border-radius:7px;border:1px solid var(--side-line);display:grid;place-items:center;font-family:var(--f-mono);font-size:12.5px;font-weight:500;color:var(--side-muted);flex:none}
+.cat .ct{min-width:0;display:flex;flex-direction:column}
+.cat .ct b{font-size:13.5px;font-weight:500}
+.cat .ct small{font-size:11px;color:var(--side-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--f-mono)}
+.cat[aria-pressed="true"]{background:var(--side-hi)}
+.cat[aria-pressed="true"] .roman{background:var(--side-acc);border-color:var(--side-acc);color:#06110D}
+.fld{display:flex;flex-direction:column;gap:5px;padding:0 8px;font-size:12.5px;color:var(--side-muted)}
+.fld select,.fld input{background:var(--side-hi);border:1px solid var(--side-line);border-radius:var(--r-s);padding:8px 10px;color:var(--side-fg);font-size:14px;width:100%;color-scheme:dark}
+.fld select#p-year{font-family:var(--f-mono);font-weight:500;font-size:15px}
+.fld input{font-family:var(--f-mono)}
+.side-note{margin:2px 8px 0;font-size:12px;color:var(--side-muted);line-height:1.45}
+.side-note b{color:#F2C46B;font-weight:500}
+.side-foot{margin-top:auto;display:flex;gap:8px;align-items:flex-start;padding:12px;border:1px solid var(--side-line);border-radius:var(--r-s);font-size:12px;color:var(--side-muted)}
+.side-foot svg{color:var(--side-acc);margin-top:1px}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:14px 28px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.crumb{font-size:12.5px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.crumb i{font-style:normal;opacity:.5}
+.topbar h1{font-size:20px;font-weight:600;letter-spacing:-.015em}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.content{padding:24px 28px 56px;display:flex;flex-direction:column;gap:28px;max-width:1360px;width:100%}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.sec-h h2{font-size:15px;font-weight:600}
+.sec-h span{font-size:12.5px;color:var(--muted)}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .side{position:static;height:auto;padding:16px;gap:16px}
+  .side-sec.nav-impacts{flex-direction:row}
+  .cats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+  .side-foot{display:none}
+  .topbar,.content{padding-inline:16px}
+}
+
+/* ---------- кнопки ---------- */
+.btn{border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:var(--r-s);cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:7px;box-shadow:0 1px 1px rgba(15,26,22,.04)}
+.btn:hover{border-color:color-mix(in srgb,var(--muted) 50%,var(--line))}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600;padding:9px 18px}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.small{padding:5px 11px;font-size:13px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted);box-shadow:none}
+.btn.ghost:hover{color:var(--fg);background:var(--surface-2)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- документы ---------- */
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.slot{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0;box-shadow:var(--shadow)}
+.slot.drag{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.slot-h{display:flex;align-items:center;gap:12px}
+.step{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-family:var(--f-mono);font-size:13px;font-weight:500;background:var(--surface-2);color:var(--muted);flex:none}
+.step.ok{background:var(--accent);color:var(--accent-fg)}
+.step.bad{background:var(--err-soft);color:var(--err)}
+.step.load{background:var(--accent-soft);color:var(--accent)}
+.slot-t{min-width:0;flex:1;display:flex;flex-direction:column}
+.slot-t b{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.slot-t small{color:var(--muted);font-size:12.5px;line-height:1.35}
+.chip{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;background:var(--surface-2);color:var(--muted)}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.bad{background:var(--err-soft);color:var(--err)}
+.chip.load{background:var(--accent-soft);color:var(--accent)}
+.shared{font-size:12px;color:var(--muted)}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:26px 12px;text-align:center;color:var(--muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--surface-2)}
+.drop:hover{border-color:var(--accent);color:var(--fg);background:var(--accent-soft)}
+.drop svg{color:var(--accent)}
+.drop u{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px}
+.drop small{display:block;font-size:12px}
+.file{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.file .name{font-weight:500;word-break:break-all;min-width:0;display:flex;gap:8px;align-items:center}
+.file .name svg{color:var(--ok)}
+.badge{font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--warn-soft);color:var(--warn);white-space:nowrap}
+.meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted);align-items:center}
+.meta label{display:inline-flex;gap:6px;align-items:center}
+.meta select,.meta input{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 6px;font-size:12.5px;max-width:160px}
+.meta input{width:56px}
+.mapstate{font-size:12.5px;display:flex;gap:6px;align-items:center;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.bad{background:var(--err)}
+.prog{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--muted)}
+.prog .track{height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden}
+.prog .fill{height:100%;background:var(--accent);width:0;border-radius:999px;transition:width .25s}
+.errbox{background:var(--err-soft);color:var(--err);border-radius:var(--r-s);padding:9px 11px;font-size:13px}
+details{border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:500;list-style:none;display:flex;align-items:center;gap:6px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin-right:2px}
+details[open]>summary::before{transform:rotate(45deg)}
+summary:hover{color:var(--fg)}
+.maptbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:12.5px}
+.maptbl td{padding:3px 0;vertical-align:middle}
+.maptbl td:first-child{padding-right:8px;color:var(--muted)}
+.maptbl select{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:4px 6px;font-size:12.5px}
+.maptbl select.unset{border-color:var(--err)}
+.req{color:var(--err)}
+.scroll{overflow-x:auto;margin-top:8px;border:1px solid var(--line);border-radius:var(--r-s)}
+.prev{border-collapse:collapse;font-size:11.5px;font-family:var(--f-mono);white-space:nowrap}
+.prev th,.prev td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+.prev th{background:var(--surface-2);font-weight:500}
+.stub{background:var(--surface);border:1.5px dashed var(--line);border-radius:var(--r);padding:36px;text-align:center;color:var(--muted)}
+.stub b{color:var(--fg);display:block;font-size:16px;margin-bottom:4px}
+
+/* ---------- отчёт ---------- */
+.report{display:flex;flex-direction:column;gap:18px;min-width:0}
+.rep-h{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end}
+.rep-h h2{font-size:18px;font-weight:600;letter-spacing:-.01em}
+.stale{background:var(--warn-soft);color:var(--warn);padding:10px 14px;border-radius:var(--r-s);font-size:13px;font-weight:500}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{display:flex;flex-direction:column;gap:6px;padding:16px 18px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);min-width:0}
+.stat span{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:7px;order:-1}
+.stat span::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--skip)}
+.stat b{font-size:28px;font-family:var(--f-mono);font-weight:500;line-height:1.1;letter-spacing:-.02em}
+.stat.err span::before{background:var(--err)} .stat.err b{color:var(--err)}
+.stat.warn span::before{background:var(--warn)} .stat.warn b{color:var(--warn)}
+.stat.ok span::before{background:var(--ok)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;min-width:0}
+.rules{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.rule{display:grid;grid-template-columns:104px 1fr auto;gap:12px;padding:10px 16px;align-items:center;border-top:1px solid var(--line);font-size:13px;margin-top:-1px}
+.rule .rid{font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.rule .rt{min-width:0}
+.rule .rt small{display:block;color:var(--muted);font-size:12px}
+.draft{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:6px;white-space:nowrap}
+.pill{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;display:inline-block}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.fail{background:var(--err-soft);color:var(--err)}
+.pill.warnp{background:var(--warn-soft);color:var(--warn)}
+.pill.skip{background:var(--skip-soft);color:var(--skip)}
+@media (max-width:600px){.rule{grid-template-columns:1fr auto}.rule .rid{grid-column:1/-1}}
+.tabs{display:inline-flex;gap:3px;background:var(--surface-2);padding:3px;border-radius:10px;align-self:flex-start}
+.tabs button{border:0;background:transparent;padding:7px 16px;cursor:pointer;font-weight:500;color:var(--muted);border-radius:8px}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(15,26,22,.1)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filters select,.filters input[type=search]{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-s);padding:8px 10px;font-size:13px;min-width:0}
+.filters input[type=search]{flex:1;min-width:180px}
+.filters label{font-size:13px;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+.ftbl{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+.ftbl th,.ftbl td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.ftbl th{font-size:11.5px;color:var(--muted);font-weight:600;background:var(--surface-2);position:sticky;top:0;z-index:1;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
+.ftbl tbody tr:hover td{background:color-mix(in srgb,var(--surface-2) 55%,transparent)}
+.ftbl td.sev{white-space:nowrap;font-weight:500;font-size:12.5px}
+.ftbl td.sev::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.ftbl tr.error td.sev{color:var(--err)} .ftbl tr.error td.sev::before{background:var(--err)}
+.ftbl tr.warning td.sev{color:var(--warn)} .ftbl tr.warning td.sev::before{background:var(--warn)}
+.ftbl .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12.5px}
+.ftbl td.v{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;font-size:12.5px}
+.ftbl td.v.miss{color:var(--err);font-family:var(--f-ui);text-align:center;font-weight:600}
+.ftbl td.v.miss span{background:var(--err-soft);padding:2px 8px;border-radius:6px}
+.ftbl td.v.na{color:var(--muted);text-align:center}
+.ftbl .obj{font-family:var(--f-mono);font-size:12px;white-space:nowrap}
+.ftbl .obj small{display:block;color:var(--muted)}
+.ftbl .zv small{display:block;color:var(--muted);font-size:12px;max-width:220px}
+.kind{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:var(--err-soft);color:var(--err);white-space:nowrap;display:inline-block;margin-bottom:3px}
+.kind.k-low{background:var(--warn-soft);color:var(--warn)}
+.kind.k-dv{background:var(--skip-soft);color:var(--fg)}
+.fwrap{overflow:auto;max-height:620px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.empty{padding:32px;text-align:center;color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:10px;font-size:13px;z-index:20;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.note{font-size:12.5px;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.btn,.cat,.nav-item,.drop,.tabs button{transition:background .15s,border-color .15s,color .15s}}
+.rules{display:flex;flex-direction:column}
+.rule:first-child{border-top:0}
+.tech{border-top:1px solid var(--line);padding:0;margin-top:-1px}
+.tech>summary{padding:11px 16px;background:var(--surface-2)}
+.tech[open]>summary{border-bottom:1px solid var(--line)}
+.tech .rule{background:color-mix(in srgb,var(--surface-2) 40%,var(--surface))}
+@media (max-width:900px){.side-sec.nav-impacts{flex-wrap:wrap}.nav-impacts .side-lbl{flex-basis:100%}.nav-impacts .nav-item{flex:1}}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <aside class="side" aria-label="Навигация">
+    <div class="brand">
+      <span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></span>
+      <div><b>Сверка НВОС</b><small>ДПиООС · контроль НВОС</small></div>
+    </div>
+    <div class="side-sec nav-impacts" id="impacts" role="group" aria-label="Вид воздействия"></div>
+    <div class="side-sec">
+      <div class="side-lbl">Категория объекта</div>
+      <div class="cats" id="cats" role="group" aria-label="Категория объекта"></div>
+    </div>
+    <div class="side-sec" id="params"></div>
+    <div class="side-foot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      <span>Файлы обрабатываются в браузере и никуда не отправляются.</span></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <div class="crumb" id="crumb"></div>
+        <h1 id="slots-title"></h1>
+      </div>
+      <div class="actions">
+        <button class="btn ghost small" data-act="demo" id="btn-demo">Загрузить пример</button>
+        <button class="btn ghost small" data-act="clear" id="btn-clear">Очистить</button>
+        <button class="btn primary" data-act="run" id="btn-run">Запустить проверку</button>
+      </div>
+    </header>
+    <div class="content">
+      <section>
+        <div class="sec-h"><h2>Документы</h2><span>Перетащите выгрузки Excel в карточки — столбцы сопоставятся автоматически</span></div>
+        <div id="slots" class="slots"></div>
+      </section>
+      <section id="report"></section>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* =====================================================================
+   1. СПРАВОЧНИКИ
+   ===================================================================== */
+const IMPACTS = [
+  { id: 'air',   label: 'Выбросы', gen: 'выброса', src: 'выброс' },
+  { id: 'water', label: 'Сбросы',  gen: 'сброса',  src: 'сброс'  },
+];
+
+const CATEGORIES = [
+  { id: 'I',   label: 'I категория',   docs: [], stub: true },
+  { id: 'II',  label: 'II категория',  docs: ['DPNVOS', 'ONVOS', 'DVOS'], params: true },
+  { id: 'III', label: 'III категория', docs: ['DPNVOS', 'ONVOS', 'PEK'] },
+  { id: 'IV',  label: 'IV категория',  docs: ['DPNVOS', 'ONVOS'] },
+];
+
+/* Поля документов. aliases — фрагменты заголовка для автосопоставления (регистр, пробелы и знаки не важны).
+   Поля перебираются по порядку, столбец занимается первым подходящим полем. */
+const fld = (key, label, aliases, required = false) => ({ key, label, aliases, required });
+const DOC_TYPES = {
+  DPNVOS: { short: 'ДПНВОС', title: 'Декларация о плате за НВОС', fields: [
+    fld('reportNo',  'Номер отчёта', ['номер отчета'], true),
+    fld('year',      'Отчётный период', ['отчетный период', 'отчетный год'], true),
+    fld('status',    'Статус отчёта', ['статус отчета']),
+    fld('inn',       'ИНН', ['инн'], true),
+    fld('objectCode','Код объекта НВОС', ['код объекта нвос', 'код объекта', 'код онвос'], true),
+    fld('objectName','Наименование объекта', ['наименование объекта нвос', 'наименование объекта']),
+    fld('category',  'Категория объекта', ['категория объекта']),
+    fld('zvCode',    'Код ЗВ', ['код зв', 'код загрязняющ', 'код вещества'], true),
+    fld('zvName',    'Наименование ЗВ', ['наименование зв', 'загрязняющее вещество', 'наименование вещества']),
+    fld('mass',      'Масса для сверки (НДВ/НДС), т', ['фактический выброс зв ндв', 'фактический сброс зв ндс', 'ндв тн', 'ндс'], true),
+    fld('massTotal', 'Фактически всего, т', ['фактический выброс зв всего', 'фактический сброс зв всего']),
+    fld('massVrv',   'В пределах ВРВ/ВРС, т', ['фактический выброс зв в пределах врв', 'фактический сброс зв в пределах врс', 'в пределах врв', 'в пределах врс']),
+    fld('massOver',  'Сверх лимита, т', ['фактический выброс сверх', 'фактический сброс сверх']),
+  ] },
+  ONVOS: { short: 'ОНВОС', title: 'Реестр объектов НВОС', fields: [
+    fld('objectCode','Номер ОНВОС', ['номер онвос', 'код объекта нвос', 'код онвос', 'код объекта'], true),
+    fld('objectName','Наименование ОНВОС', ['наименование онвос', 'наименование объекта']),
+    fld('category',  'Категория объекта', ['категория объекта'], true),
+    fld('dateIn',    'Дата включения в реестр', ['дата включения']),
+    fld('dateOut',   'Дата исключения из реестра', ['дата исключения'], true),
+    fld('inn',       'ИНН', ['инн'], true),
+    fld('sourceType','Тип источника', ['тип источника']),
+    fld('zvCode',    'Код вещества', ['код вещества', 'код зв', 'код загрязняющ'], true),
+    fld('zvName',    'Наименование вещества', ['наименование вещества', 'наименование зв']),
+    fld('mass',      'Масса выбросов/сбросов, т', ['масса выбросов/сбросов', 'масса выбросов', 'масса сбросов', 'масса'], true),
+  ] },
+  DVOS: { short: 'ДВОС', title: 'Декларация о воздействии на окружающую среду', fields: [
+    fld('reportNo',  'Номер отчёта', ['номер отчета'], true),
+    fld('dateSubmit','Дата подачи отчёта', ['дата подачи'], true),
+    fld('year',      'Отчётный период', ['отчетный период']),
+    fld('status',    'Статус отчёта', ['статус отчета']),
+    fld('inn',       'ИНН', ['инн'], true),
+    fld('objectCode','Код ОНВОС', ['код онвос', 'код объекта нвос', 'код объекта'], true),
+    fld('objectName','Наименование объекта', ['наименование объекта']),
+    fld('category',  'Категория по данным реестра', ['категория']),
+    fld('zvCode',    'Код загрязняющего вещества', ['код загрязняющего вещества', 'код зв', 'код вещества'], true),
+    fld('zvName',    'Загрязняющее вещество', ['загрязняющее вещество', 'наименование зв', 'наименование вещества']),
+    fld('mass',      'Масса, т/год всего', ['масса выбросов тонн/год всего', 'масса сбросов тонн/год всего', 'тонн/год всего', 'всего'], true),
+  ] },
+  PEK: { short: 'ПЭК', title: 'Отчёт о производственном экологическом контроле', fields: [
+    fld('objectCode','Код объекта НВОС', ['код объекта нвос', 'код онвос', 'код объекта'], true),
+    fld('inn',       'ИНН', ['инн']),
+    fld('zvCode',    'Код ЗВ', ['код зв', 'код загрязняющ', 'код вещества']),
+    fld('zvName',    'Наименование ЗВ', ['наименование зв', 'загрязняющее вещество', 'наименование вещества'], true),
+    fld('mass',      'Масса, т/год', ['фактическ', 'масса', 'т/год', 'тгод'], true),
+  ] },
+};
+const fieldLabel = (d, k) => DOC_TYPES[d].fields.find(f => f.key === k)?.label || k;
+const short = d => DOC_TYPES[d].short;
+
+/* =====================================================================
+   2. ПОМОЩНИКИ
+   ===================================================================== */
+function norm(v) { return v == null ? '' : String(v).replace(/\s+/g, ' ').trim().toUpperCase(); }
+function num(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  if (v == null || v === '') return null;
+  const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+const normInn = v => String(v ?? '').replace(/\D/g, '');
+const normZv = v => { const s = String(v ?? '').trim(); if (!s) return ''; return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s.toUpperCase(); };
+function catNorm(v) {
+  const s = String(v ?? '').toUpperCase().replace(/[^IV0-9]/g, '');
+  return ({ '1': 'I', '2': 'II', '3': 'III', '4': 'IV' })[s] || s;
+}
+function toDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  if (typeof v === 'number') {
+    if (v > 20000 && v < 80000) { const u = new Date(Math.round((v - 25569) * 864e5)); return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate()); }
+    return null;
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/); if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  if (/^\d{5}(\.\d+)?$/.test(s)) return toDate(Number(s));
+  return null;
+}
+const yearOf = v => { const d = v instanceof Date ? v.getFullYear() : parseInt(String(v ?? '').trim(), 10); return isNaN(d) ? null : d; };
+const addYears = (d, n) => new Date(d.getFullYear() + n, d.getMonth(), d.getDate());
+const fmtDate = d => d ? d.toLocaleDateString('ru-RU') : '';
+function fmtNum(n) { return n == null ? '—' : Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 7 }); }
+function matchesImpact(v, impact) { const s = String(v ?? '').toLowerCase(); return impact === 'water' ? s.includes('сброс') : s.includes('выброс'); }
+
+/* =====================================================================
+   3. ПРАВИЛА
+   needs — какие документы обязательны; fields — какие поля должны быть сопоставлены;
+   categories / impacts — где применяется; perDoc — выполняется для каждого документа категории.
+   ===================================================================== */
+const RULES = [
+  /* ---------- технические, для всех категорий ---------- */
+  { id: 'T-01', title: 'Обязательные столбцы найдены', severity: 'error', perDoc: true,
+    run(ctx, d) {
+      return DOC_TYPES[d].fields.filter(f => f.required && ctx.docs[d].map[f.key] == null)
+        .map(f => ({ doc: d, message: `Не найден столбец «${f.label}» — сопоставьте его в блоке «Столбцы»` }));
+    } },
+  { id: 'T-02', title: 'Код объекта НВОС заполнен', severity: 'warning', perDoc: true, fields: ['objectCode'],
+    run(ctx, d) {
+      return ctx.docs[d].rows.filter(r => !norm(r.objectCode)).slice(0, 2000)
+        .map(r => ({ doc: d, row: r._row, inn: normInn(r.inn), message: 'Код объекта НВОС пусто' }));
+    } },
+  { id: 'T-03', title: 'Формат кода объекта НВОС (XX-XXXX-XXXXXX-П/Т/Л)', severity: 'warning', perDoc: true, fields: ['objectCode'],
+    run(ctx, d) {
+      const re = /^\d{2}-\d{4}-\d{6}-[ПТЛ]$/, seen = new Set(), out = [];
+      for (const r of ctx.docs[d].rows) {
+        const c = norm(r.objectCode);
+        if (!c || re.test(c) || seen.has(c)) continue;
+        seen.add(c); out.push({ doc: d, row: r._row, objectCode: c, inn: normInn(r.inn), message: 'Код не соответствует формату XX-XXXX-XXXXXX-П' });
+      }
+      return out;
+    } },
+
+  /* ---------- II категория: ДПНВОС ↔ реестр ОНВОС ↔ ДВОС, ключ = код объекта + ИНН ---------- */
+  { id: 'II-01', title: 'По объекту реестра подана декларация ДПНВОС (номер отчёта)', severity: 'error', categories: ['II'],
+    needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode', 'inn', 'reportNo'], ONVOS: ['objectCode', 'inn', 'category', 'dateOut'] },
+    run(ctx) {
+      const M = modelII(ctx), out = [];
+      for (const o of M.scope) {
+        if (o.on && o.on.hasImpact && o.on.cat === ctx.category && !o.dp) {
+          const out_ = o.on.dateOut;
+          if (out_ && out_ <= M.y1) out.push(f(o, { severity: 'warning', kind: 'Исключён', doc: 'ONVOS', message: `Декларации за ${M.Y} нет; объект исключён из реестра ${fmtDate(out_)}` }));
+          else out.push(f(o, { kind: 'Нет ДПНВОС', doc: 'ONVOS', message: `Нет декларации ДПНВОС за ${M.Y}` + (out_ ? ` (дата исключения ${fmtDate(out_)} — после отчётного года)` : '') }));
+        }
+        if (o.dp) {
+          if (!norm(o.dp.rep.no)) out.push(f(o, { doc: 'DPNVOS', row: o.dp.rep.firstRow, kind: 'Пусто', message: 'Номер отчёта ДПНВОС пусто' }));
+          if (o.dp.reports.size > 1) out.push(f(o, { severity: 'warning', doc: 'DPNVOS', message: `Несколько отчётов ДПНВОС за ${M.Y}: № ${[...o.dp.reports.values()].map(r => r.no).join(', ')}; в сверке используется № ${o.dp.rep.no}` }));
+        }
+      }
+      return out;
+    } },
+  { id: 'II-02', title: 'Объект найден в реестре ОНВОС по коду и ИНН', severity: 'error', categories: ['II'],
+    needs: ['ONVOS'], fields: { ONVOS: ['objectCode', 'inn', 'category'] },
+    run(ctx) {
+      const M = modelII(ctx), out = [];
+      for (const o of M.scope) {
+        const src = o.dp ? 'DPNVOS' : 'DVOS', row = o.dp ? o.dp.rep.firstRow : o.dv?.rep.firstRow;
+        if (!o.on) {
+          if (!o.dp && !o.dv) continue;
+          const inns = M.onByCode.get(o.code);
+          out.push(f(o, inns ? { doc: src, row, kind: 'ИНН', message: `ИНН не совпадает с реестром: в ОНВОС ${[...inns].join(', ')}` }
+                             : { doc: src, row, kind: 'Нет в реестре', message: 'Объект не найден в реестре ОНВОС' }));
+        } else {
+          if (o.on.cat !== ctx.category) out.push(f(o, { severity: 'warning', doc: 'ONVOS', message: `В реестре категория ${o.on.cat || 'не указана'}, проверяется ${ctx.category}` }));
+          if (o.on.dateOut && o.on.dateOut < M.y0) out.push(f(o, { severity: 'warning', doc: 'ONVOS', message: `Объект исключён из реестра ${fmtDate(o.on.dateOut)}, до отчётного года, но есть в ${o.dp ? 'ДПНВОС' : 'ДВОС'}` }));
+        }
+      }
+      return out;
+    } },
+  { id: 'II-03', title: 'ДВОС подана и действует в отчётном году (7 лет с даты подачи)', severity: 'error', categories: ['II'],
+    needs: ['DVOS'], fields: { DVOS: ['objectCode', 'inn', 'dateSubmit'] },
+    run(ctx) {
+      const M = modelII(ctx), out = [];
+      for (const o of M.scope) {
+        if (!o.dv) {
+          if (o.on && o.on.dateOut && o.on.dateOut <= M.y1) out.push(f(o, { severity: 'warning', kind: 'Нет ДВОС', doc: 'ONVOS', message: `ДВОС нет; объект исключён из реестра ${fmtDate(o.on.dateOut)}` }));
+          else out.push(f(o, { kind: 'Нет ДВОС', doc: o.on ? 'ONVOS' : 'DPNVOS', message: 'ДВОС по объекту не найдена' }));
+          continue;
+        }
+        const R = o.dv.rep, v = R.valid;
+        const what = `ДВОС № ${R.no} от ${fmtDate(R.date)}`;
+        if (v === 'nodate') out.push(f(o, { doc: 'DVOS', row: R.firstRow, kind: 'Пусто', message: `${'ДВОС № ' + R.no}: дата подачи пусто` }));
+        else if (v === 'partial') out.push(f(o, { severity: 'warning', doc: 'DVOS', row: R.firstRow, kind: 'Входит частично', message: `${what} действует до ${fmtDate(R.until)} — ${M.Y} год входит частично` }));
+        else if (v === 'expired') out.push(f(o, { doc: 'DVOS', row: R.firstRow, kind: 'Не входит', message: `${what}: срок 7 лет истёк ${fmtDate(R.until)} — ${M.Y} год не входит` }));
+        else if (v === 'future') out.push(f(o, { doc: 'DVOS', row: R.firstRow, kind: 'Не входит', message: `${what} подана после ${M.Y} года — отчётный год не входит` }));
+      }
+      return out;
+    } },
+  { id: 'II-04', title: 'Коды ЗВ совпадают в ДПНВОС, ОНВОС и ДВОС', severity: 'error', categories: ['II'],
+    needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode', 'inn', 'zvCode'], ONVOS: ['objectCode', 'inn', 'zvCode'] },
+    run(ctx) {
+      const M = modelII(ctx), out = [];
+      for (const o of M.scope) {
+        for (const [d, e] of Object.entries(o.empty)) for (const row of e.slice(0, 50))
+          out.push(f(o, { doc: d, row, kind: 'Пусто', message: `${short(d)}: масса указана, код ЗВ пусто` }));
+        const P = presentDocs(o);
+        if (P.length < 2) continue;
+        for (const z of unionZv(P)) {
+          const missing = P.filter(([, zv]) => !zv.has(z)).map(([d]) => d);
+          if (!missing.length) continue;
+          out.push(f(o, { ...zvInfo(P, z), vals: valsOf(o, P, z), kind: 'Нет ЗВ', message: `Вещество отсутствует в: ${missing.map(short).join(', ')}` }));
+        }
+      }
+      return out;
+    } },
+  { id: 'II-05', title: 'Масса ЗВ совпадает: ДПНВОС = ОНВОС = ДВОС', severity: 'error', categories: ['II'],
+    needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode', 'inn', 'zvCode', 'mass'], ONVOS: ['objectCode', 'inn', 'zvCode', 'mass'] },
+    run(ctx) {
+      const M = modelII(ctx), tol = M.tol, out = [];
+      for (const o of M.scope) {
+        const P = presentDocs(o);
+        if (P.length < 2) continue;
+        for (const z of unionZv(P)) {
+          const have = P.filter(([, zv]) => zv.has(z));
+          if (have.length < 2) continue;
+          const val = Object.fromEntries(have.map(([d, zv]) => [d, zv.get(z)]));
+          const empty = have.filter(([d]) => val[d].massEmpty && !val[d].hasMass).map(([d]) => d);
+          if (empty.length) {
+            out.push(f(o, { ...zvInfo(P, z), vals: valsOf(o, P, z), kind: 'Пусто', message: `Масса не указана в: ${empty.map(short).join(', ')}` }));
+            continue;
+          }
+          const nums = have.map(([d]) => val[d].mass);
+          if (Math.max(...nums) - Math.min(...nums) <= tol) continue;
+          const dp = val.DPNVOS?.mass, on = val.ONVOS?.mass, dv = val.DVOS?.mass;
+          let kind, cls = '', msg;
+          const base = dp != null ? ['DPNVOS', dp] : ['DVOS', dv];
+          if (on != null && base[1] != null && Math.abs(base[1] - on) > tol) {
+            const delta = base[1] - on;
+            if (delta > 0) { kind = 'Сверхлимит'; msg = `${short(base[0])} больше реестра на ${fmtNum(+delta.toPrecision(6))} т`; }
+            else { kind = 'Меньше реестра'; cls = 'k-low'; msg = `${short(base[0])} меньше реестра на ${fmtNum(+(-delta).toPrecision(6))} т`; }
+          } else { kind = 'Расхождение с ДВОС'; cls = 'k-dv'; msg = `ДВОС отличается на ${fmtNum(+Math.abs((dv ?? 0) - (dp ?? on)).toPrecision(6))} т`; }
+          if (dp != null && dv != null && on != null && Math.abs(dp - dv) > tol && kind !== 'Расхождение с ДВОС') msg += `; ДВОС: ${fmtNum(dv)} т`;
+          const over = val.DPNVOS?.over;
+          if (over) msg += `; в ДПНВОС выброс сверх лимита ${fmtNum(over)} т`;
+          if (val.DPNVOS?.vrv) msg += `; в пределах ВРВ ${fmtNum(val.DPNVOS.vrv)} т`;
+          out.push(f(o, { ...zvInfo(P, z), vals: valsOf(o, P, z), kind, kindCls: cls, message: msg }));
+        }
+      }
+      return out;
+    } },
+
+  /* ---------- III и IV категории: шаблоны, условия уточняются ---------- */
+  { id: 'X-01', title: 'Объекты из декларации есть в реестре ОНВОС', severity: 'error', draft: true, categories: ['III', 'IV'],
+    needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode'], ONVOS: ['objectCode'] },
+    run(ctx) { return keysMissing(ctx, 'DPNVOS', 'ONVOS', 'Объект не найден в реестре ОНВОС'); } },
+  { id: 'X-02', title: 'Масса ЗВ: ДПНВОС ↔ ПЭК', severity: 'error', draft: true, categories: ['III'],
+    needs: ['DPNVOS', 'PEK'], fields: { DPNVOS: ['objectCode', 'zvName', 'mass'], PEK: ['objectCode', 'zvName', 'mass'] },
+    run(ctx) { return compareMassSimple(ctx, 'DPNVOS', 'PEK', ctx.settings.tol); } },
+];
+
+/* ---------- модель II категории: всё сводится по ключу «код объекта + ИНН» ---------- */
+function f(o, extra) { return { objKey: o.key, objectCode: o.code, inn: o.inn, objectName: o.name, ...extra }; }
+function presentDocs(o) {
+  const P = [];
+  if (o.dp) P.push(['DPNVOS', o.dp.rep.zv]);
+  if (o.on && o.on.hasImpact) P.push(['ONVOS', o.on.zv]);
+  if (o.dv) P.push(['DVOS', o.dv.rep.zv]);
+  return P;
+}
+function unionZv(P) { const s = new Set(); for (const [, zv] of P) for (const k of zv.keys()) s.add(k); return [...s].sort(); }
+function zvInfo(P, z) { for (const [, zv] of P) { const e = zv.get(z); if (e) return { zvCode: e.code, zvName: e.name }; } return { zvCode: z }; }
+function valsOf(o, P, z) {
+  const v = {};
+  for (const d of ['DPNVOS', 'ONVOS', 'DVOS']) {
+    const p = P.find(x => x[0] === d);
+    if (!p) { v[d] = { t: 'na' }; continue; }
+    const e = p[1].get(z);
+    v[d] = !e ? { t: 'miss' } : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass };
+  }
+  return v;
+}
+
+function modelII(ctx) {
+  if (ctx._m) return ctx._m;
+  const Y = ctx.settings.year, tol = ctx.settings.tol;
+  const y0 = new Date(Y, 0, 1), y1 = new Date(Y, 11, 31, 23, 59, 59);
+  const D = ctx.docs;
+  const keyOf = r => norm(r.objectCode) + '|' + normInn(r.inn);
+  const objs = new Map(), onByCode = new Map();
+  const get = r => {
+    const key = keyOf(r);
+    let o = objs.get(key);
+    if (!o) { o = { key, code: norm(r.objectCode), inn: normInn(r.inn), name: '', on: null, dp: null, dv: null, empty: {} }; objs.set(key, o); }
+    if (!o.name && r.objectName) o.name = String(r.objectName).trim();
+    return o;
+  };
+  const addZv = (map, r, o, doc) => {
+    const z = normZv(r.zvCode), m = num(r.mass);
+    if (!z) { if (m) (o.empty[doc] ||= []).push(r._row); return; }
+    let e = map.get(z);
+    if (!e) { e = { code: String(r.zvCode).trim(), name: r.zvName ? String(r.zvName).trim() : '', mass: 0, hasMass: false, massEmpty: false, over: 0, vrv: 0, total: 0, rows: [] }; map.set(z, e); }
+    if (m == null) e.massEmpty = true; else { e.mass += m; e.hasMass = true; }
+    if (!e.name && r.zvName) e.name = String(r.zvName).trim();
+    e.over += num(r.massOver) || 0; e.vrv += num(r.massVrv) || 0; e.total += num(r.massTotal) || 0;
+    e.rows.push(r._row);
+  };
+
+  if (D.ONVOS) {
+    const typed = D.ONVOS.map.sourceType != null;
+    for (const r of D.ONVOS.rows) {
+      const code = norm(r.objectCode); if (!code) continue;
+      let s = onByCode.get(code); if (!s) onByCode.set(code, s = new Set()); s.add(normInn(r.inn));
+      const o = get(r);
+      if (!o.on) o.on = { cat: catNorm(r.category), dateIn: toDate(r.dateIn), dateOut: toDate(r.dateOut), zv: new Map(), hasImpact: false };
+      if (typed && !matchesImpact(r.sourceType, ctx.impact)) continue;
+      o.on.hasImpact = true;
+      addZv(o.on.zv, r, o, 'ONVOS');
+    }
+  }
+  if (D.DPNVOS) {
+    const byYear = D.DPNVOS.map.year != null;
+    for (const r of D.DPNVOS.rows) {
+      if (byYear && yearOf(r.year) !== Y) continue;
+      if (!norm(r.objectCode)) continue;
+      const o = get(r);
+      if (!o.dp) o.dp = { cat: catNorm(r.category), reports: new Map() };
+      const k = norm(r.reportNo);
+      let R = o.dp.reports.get(k);
+      if (!R) o.dp.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), status: r.status, zv: new Map(), firstRow: r._row });
+      addZv(R.zv, r, o, 'DPNVOS');
+    }
+    for (const o of objs.values()) if (o.dp)
+      o.dp.rep = [...o.dp.reports.values()].sort((a, b) => (num(b.no) || 0) - (num(a.no) || 0))[0];
+  }
+  if (D.DVOS) {
+    for (const r of D.DVOS.rows) {
+      if (!norm(r.objectCode)) continue;
+      const o = get(r);
+      if (!o.dv) o.dv = { reports: new Map() };
+      const k = norm(r.reportNo) + '|' + String(r.dateSubmit ?? '');
+      let R = o.dv.reports.get(k);
+      if (!R) o.dv.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), date: toDate(r.dateSubmit), zv: new Map(), firstRow: r._row });
+      addZv(R.zv, r, o, 'DVOS');
+    }
+    const rank = { full: 0, partial: 1, expired: 2, future: 3, nodate: 4 };
+    for (const o of objs.values()) if (o.dv) {
+      for (const R of o.dv.reports.values()) {
+        if (!R.date) { R.valid = 'nodate'; continue; }
+        R.until = addYears(R.date, 7);
+        R.valid = R.date > y1 ? 'future' : R.until < y0 ? 'expired' : (R.date <= y0 && R.until >= y1) ? 'full' : 'partial';
+      }
+      o.dv.rep = [...o.dv.reports.values()].sort((a, b) => rank[a.valid] - rank[b.valid] || (b.date || 0) - (a.date || 0))[0];
+    }
+  }
+  const cat = ctx.category, scope = [];
+  for (const o of objs.values()) {
+    const onIn = o.on && o.on.cat === cat && o.on.hasImpact && !(o.on.dateIn && o.on.dateIn > y1) && !(o.on.dateOut && o.on.dateOut < y0);
+    const dpIn = o.dp && (o.dp.cat === cat || (o.on && o.on.cat === cat));
+    if (onIn || dpIn || o.dv) scope.push(o);
+  }
+  scope.sort((a, b) => a.code.localeCompare(b.code));
+  return ctx._m = { Y, y0, y1, tol, objs, scope, onByCode };
+}
+
+/* ---------- помощники шаблонных правил ---------- */
+function keysMissing(ctx, from, to, message) {
+  const have = new Set(ctx.docs[to].rows.map(r => norm(r.objectCode)).filter(Boolean));
+  const seen = new Set(), out = [];
+  for (const r of ctx.docs[from].rows) {
+    const k = norm(r.objectCode);
+    if (!k || have.has(k) || seen.has(k)) continue;
+    seen.add(k); out.push({ doc: from, row: r._row, objectCode: k, inn: normInn(r.inn), message });
+  }
+  return out;
+}
+function compareMassSimple(ctx, a, b, tol) {
+  const agg = d => { const m = new Map(); for (const r of ctx.docs[d].rows) { const obj = norm(r.objectCode); if (!obj) continue; const k = obj + '|' + (normZv(r.zvCode) || norm(r.zvName)); const e = m.get(k) || { sum: 0, row: r._row, code: r.zvCode, name: r.zvName, obj }; e.sum += num(r.mass) || 0; m.set(k, e); } return m; };
+  const A = agg(a), B = agg(b), out = [];
+  for (const [k, ea] of A) { const eb = B.get(k);
+    if (!eb) out.push({ doc: a, row: ea.row, objectCode: ea.obj, zvCode: ea.code, zvName: ea.name, message: `Вещество отсутствует в ${short(b)}` });
+    else if (Math.abs(ea.sum - eb.sum) > tol) out.push({ doc: a, row: ea.row, objectCode: ea.obj, zvCode: ea.code, zvName: ea.name, message: `Расхождение массы: ${short(a)} ${fmtNum(ea.sum)} т, ${short(b)} ${fmtNum(eb.sum)} т` }); }
+  return out;
+}
+
+/* =====================================================================
+   4. ДВИЖОК
+   ===================================================================== */
+function runChecks(impact, catId) {
+  const cat = CATEGORIES.find(c => c.id === catId), b = bucket(impact, catId);
+  const ctx = { impact, category: catId, settings: { ...b.settings }, docs: {} };
+  for (const d of cat.docs) { const s = slotOf(d, impact); if (s && s.records) ctx.docs[d] = { fileName: s.fileName, map: s.map, rows: s.records }; }
+  const results = [], findings = [];
+  for (const rule of RULES) {
+    if (rule.impacts && !rule.impacts.includes(impact)) continue;
+    if (rule.categories && !rule.categories.includes(catId)) continue;
+    const instances = rule.perDoc ? cat.docs.map(d => ({ docs: [d], docId: d })) : [{ docs: rule.needs || [] }];
+    for (const inst of instances) {
+      if (!inst.docs.every(d => cat.docs.includes(d))) continue;
+      const id = rule.perDoc ? `${rule.id} · ${short(inst.docId)}` : rule.id;
+      const res = { id, title: rule.title, draft: !!rule.draft, docs: inst.docs, status: 'ok', count: 0, errors: 0, note: '' };
+      results.push(res);
+      const missingDocs = inst.docs.filter(d => !ctx.docs[d]);
+      if (missingDocs.length) { res.status = 'skip'; res.note = 'Не загружен: ' + missingDocs.map(short).join(', '); continue; }
+      const need = rule.perDoc ? { [inst.docId]: rule.fields || [] } : (rule.fields || {});
+      const missingF = [];
+      for (const [d, fs] of Object.entries(need)) if (ctx.docs[d]) for (const k of fs) if (ctx.docs[d].map[k] == null) missingF.push(`${short(d)}: ${fieldLabel(d, k)}`);
+      if (missingF.length) { res.status = 'skip'; res.note = 'Не сопоставлено: ' + missingF.join('; '); continue; }
+      let out;
+      try { out = rule.run(ctx, inst.docId) || []; }
+      catch (e) { console.error(e); res.status = 'skip'; res.note = 'Ошибка выполнения: ' + e.message; continue; }
+      for (const x of out) { x.ruleId = id; x.ruleTitle = rule.title; x.severity = x.severity || rule.severity; findings.push(x); }
+      res.count = out.length; res.errors = out.filter(x => x.severity === 'error').length;
+      res.status = !out.length ? 'ok' : res.errors ? 'fail' : 'warn';
+    }
+  }
+  const report = { at: new Date(), impact, category: catId, settings: ctx.settings, results, findings,
+    files: cat.docs.map(d => { const s = slotOf(d, impact); return { doc: d, fileName: s?.fileName || null, rows: s?.records?.length || 0, demo: !!s?.demo }; }) };
+  if (ctx._m) report.objects = summarizeObjects(ctx._m, findings);
+  return report;
+}
+
+function summarizeObjects(M, findings) {
+  const cnt = new Map();
+  for (const x of findings) if (x.objKey) { const c = cnt.get(x.objKey) || { e: 0, w: 0 }; x.severity === 'error' ? c.e++ : c.w++; cnt.set(x.objKey, c); }
+  return M.scope.map(o => {
+    const c = cnt.get(o.key) || { e: 0, w: 0 }, R = o.dv?.rep;
+    return { key: o.key, code: o.code, inn: o.inn, name: o.name,
+      onCat: o.on ? o.on.cat : '', inReg: !!o.on, dateOut: o.on?.dateOut || null,
+      dpNo: o.dp ? [...o.dp.reports.values()].map(r => r.no).join(', ') : '',
+      dvNo: R ? R.no : '', dvDate: R?.date || null, dvUntil: R?.until || null, dvValid: R ? R.valid : 'none',
+      zvDp: o.dp ? o.dp.rep.zv.size : null, zvOn: o.on && o.on.hasImpact ? o.on.zv.size : null, zvDv: R ? R.zv.size : null,
+      errors: c.e, warnings: c.w };
+  });
+}
+
+/* =====================================================================
+   5. ЧТЕНИЕ EXCEL
+   .xlsx — потоково в фоновом потоке (Web Worker): распаковка zip встроенным DecompressionStream,
+   из листа берутся только сопоставленные столбцы. .xls / .csv — через SheetJS.
+   ===================================================================== */
+function workerMain() {
+  let file = null, entries = null, sheets = null, sst = null;
+  const td = new TextDecoder();
+  async function zipDir() {
+    const tailLen = Math.min(file.size, 65557 + 22);
+    const tail = new DataView(await file.slice(file.size - tailLen).arrayBuffer());
+    let eocd = -1;
+    for (let i = tailLen - 22; i >= 0; i--) if (tail.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error('Файл не похож на .xlsx');
+    let cdSize = tail.getUint32(eocd + 12, true), cdOff = tail.getUint32(eocd + 16, true);
+    if (cdOff === 0xFFFFFFFF && eocd >= 20 && tail.getUint32(eocd - 20, true) === 0x07064b50) {
+      const zoff = Number(tail.getBigUint64(eocd - 12, true));
+      const z = new DataView(await file.slice(zoff, zoff + 56).arrayBuffer());
+      cdSize = Number(z.getBigUint64(40, true)); cdOff = Number(z.getBigUint64(48, true));
+    }
+    const cd = new DataView(await file.slice(cdOff, cdOff + cdSize).arrayBuffer());
+    const out = {}; let p = 0;
+    while (p + 46 <= cd.byteLength && cd.getUint32(p, true) === 0x02014b50) {
+      const method = cd.getUint16(p + 10, true);
+      let csize = cd.getUint32(p + 20, true), usize = cd.getUint32(p + 24, true);
+      const nlen = cd.getUint16(p + 28, true), xlen = cd.getUint16(p + 30, true), clen = cd.getUint16(p + 32, true);
+      let off = cd.getUint32(p + 42, true);
+      const name = td.decode(new Uint8Array(cd.buffer, p + 46, nlen));
+      if (csize === 0xFFFFFFFF || usize === 0xFFFFFFFF || off === 0xFFFFFFFF) {
+        let q = p + 46 + nlen; const end = q + xlen;
+        while (q + 4 <= end) {
+          const id = cd.getUint16(q, true), sz = cd.getUint16(q + 2, true);
+          if (id === 1) { let r = q + 4;
+            if (usize === 0xFFFFFFFF) { usize = Number(cd.getBigUint64(r, true)); r += 8; }
+            if (csize === 0xFFFFFFFF) { csize = Number(cd.getBigUint64(r, true)); r += 8; }
+            if (off === 0xFFFFFFFF) off = Number(cd.getBigUint64(r, true)); }
+          q += 4 + sz;
+        }
+      }
+      out[name.replace(/\\/g, '/').toLowerCase()] = { method, csize, off };
+      p += 46 + nlen + xlen + clen;
+    }
+    return out;
+  }
+  async function textStream(name) {
+    const e = entries[name.toLowerCase()];
+    if (!e) return null;
+    const lh = new DataView(await file.slice(e.off, e.off + 30).arrayBuffer());
+    const start = e.off + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+    let s = file.slice(start, start + e.csize).stream();
+    if (e.method === 8) s = s.pipeThrough(new DecompressionStream('deflate-raw'));
+    else if (e.method !== 0) throw new Error('Неподдерживаемый способ сжатия в xlsx');
+    return s.pipeThrough(new TextDecoderStream());
+  }
+  async function readAll(name) { const s = await textStream(name); if (!s) return null; let t = ''; const rd = s.getReader(); for (;;) { const { done, value } = await rd.read(); if (done) break; t += value; } return t; }
+  const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+  function unesc(s) {
+    if (s.indexOf('&') >= 0) s = s.replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g, (m, g) => g[0] === '#' ? String.fromCodePoint(g[1] === 'x' ? parseInt(g.slice(2), 16) : parseInt(g.slice(1), 10)) : ENT[g]);
+    if (s.indexOf('_x') >= 0) s = s.replace(/_x([0-9A-Fa-f]{4})_/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+    return s;
+  }
+  function texts(x) {
+    if (x.indexOf('<rPh') >= 0) x = x.replace(/<rPh[\s\S]*?<\/rPh>/g, '');
+    let out = '', i = 0;
+    for (;;) {
+      const a = x.indexOf('<t', i); if (a < 0) break;
+      const ch = x[a + 2];
+      if (ch !== '>' && ch !== ' ' && ch !== '/') { i = a + 2; continue; }
+      const gt = x.indexOf('>', a); if (x[gt - 1] === '/') { i = gt + 1; continue; }
+      const b = x.indexOf('</t>', gt); out += x.slice(gt + 1, b); i = b + 4;
+    }
+    return unesc(out);
+  }
+  async function loadMeta() {
+    entries = await zipDir();
+    const wb = await readAll('xl/workbook.xml');
+    const rels = await readAll('xl/_rels/workbook.xml.rels') || '';
+    if (!wb) throw new Error('В файле нет листов Excel');
+    const relMap = {};
+    for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
+      const id = /\bId="([^"]+)"/.exec(m[0]), tg = /\bTarget="([^"]+)"/.exec(m[0]);
+      if (id && tg) relMap[id[1]] = tg[1];
+    }
+    sheets = [];
+    for (const m of wb.matchAll(/<sheet\b[^>]*>/g)) {
+      const nm = /\bname="([^"]*)"/.exec(m[0]), rid = /\br:id="([^"]+)"/.exec(m[0]) || /\bid="([^"]+)"/.exec(m[0]);
+      let t = rid && relMap[rid[1]]; if (!t) continue;
+      t = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\//, '');
+      sheets.push({ name: unesc(nm ? nm[1] : 'Лист'), path: t });
+    }
+    sst = [];
+    const s = await textStream('xl/sharedStrings.xml');
+    if (s) {
+      const rd = s.getReader(); let buf = '';
+      for (;;) {
+        const { done, value } = await rd.read(); if (done) break;
+        buf += value; let pos = 0;
+        for (;;) {
+          const a = buf.indexOf('<si', pos); if (a < 0) { pos = Math.max(pos, buf.length - 3); break; }
+          const gt = buf.indexOf('>', a); if (gt < 0) { pos = a; break; }
+          if (buf[gt - 1] === '/') { sst.push(''); pos = gt + 1; continue; }
+          const b = buf.indexOf('</si>', gt); if (b < 0) { pos = a; break; }
+          sst.push(texts(buf.slice(gt + 1, b))); pos = b + 5;
+        }
+        buf = buf.slice(pos);
+      }
+    }
+  }
+  function colIdx(s) { let n = 0; for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64); return n - 1; }
+  function cellVal(t, inner) {
+    if (t === 'inlineStr') return texts(inner);
+    const a = inner.indexOf('<v'); if (a < 0) return '';
+    const gt = inner.indexOf('>', a); if (inner[gt - 1] === '/') return '';
+    const raw = inner.slice(gt + 1, inner.indexOf('</v>', gt));
+    if (t === 's') return sst[+raw] ?? '';
+    if (t === 'str' || t === 'e' || t === 'd') return unesc(raw);
+    if (t === 'b') return raw === '1';
+    if (raw === '') return '';
+    const n = Number(raw); return isNaN(n) ? raw : n;
+  }
+  /* обходит лист; onRow(rowNumber1based, cells[]) — cells разреженно по индексам столбцов */
+  async function scanSheet(si, want, onRow, onProgress) {
+    const s = await textStream(sheets[si].path); if (!s) throw new Error('Лист не найден');
+    const rd = s.getReader(); let buf = '', lastRow = 0, rowsSeen = 0, stop = false, nextR = 1;
+    for (;;) {
+      const { done, value } = await rd.read(); if (done) break;
+      buf += value; let pos = 0;
+      if (!lastRow) { const m = /<dimension ref="[A-Z]+\d+:[A-Z]+(\d+)"/.exec(buf); if (m) lastRow = +m[1]; }
+      for (;;) {
+        const a = buf.indexOf('<row', pos); if (a < 0) { pos = Math.max(pos, buf.length - 4); break; }
+        if (a + 5 > buf.length) { pos = a; break; }
+        const ch = buf[a + 4]; if (ch !== ' ' && ch !== '>' && ch !== '/') { pos = a + 4; continue; }
+        const gt = buf.indexOf('>', a); if (gt < 0) { pos = a; break; }
+        const open = buf.slice(a, gt);
+        const rm = / r="(\d+)"/.exec(open); const rn = rm ? +rm[1] : nextR; nextR = rn + 1;
+        if (buf[gt - 1] === '/') { pos = gt + 1; continue; }
+        const b = buf.indexOf('</row>', gt); if (b < 0) { pos = a; break; }
+        const body = buf.slice(gt + 1, b); pos = b + 6;
+        const cells = []; let i = 0, ci = -1;
+        for (;;) {
+          const c = body.indexOf('<c', i); if (c < 0) break;
+          const cch = body[c + 2]; if (cch !== ' ' && cch !== '>' && cch !== '/') { i = c + 2; continue; }
+          const cgt = body.indexOf('>', c); const self = body[cgt - 1] === '/';
+          const attrs = body.slice(c + 2, self ? cgt - 1 : cgt);
+          const ra = attrs.indexOf(' r="');
+          if (ra >= 0) { let e = ra + 4, k = e; while (attrs.charCodeAt(k) >= 65 && attrs.charCodeAt(k) <= 90) k++; ci = colIdx(attrs.slice(e, k)); } else ci++;
+          let end = cgt + 1;
+          if (!self) { end = body.indexOf('</c>', cgt);
+            if (!want || want(rn, ci)) { const ta = attrs.indexOf(' t="'); const t = ta >= 0 ? attrs.slice(ta + 4, attrs.indexOf('"', ta + 4)) : 'n'; cells[ci] = cellVal(t, body.slice(cgt + 1, end)); }
+            end += 4; }
+          i = end;
+        }
+        if (onRow(rn, cells) === false) { stop = true; break; }
+        if (++rowsSeen % 20000 === 0 && onProgress) onProgress(rn, lastRow);
+      }
+      buf = buf.slice(pos);
+      if (stop) { try { await rd.cancel(); } catch (e) {} break; }
+    }
+    return lastRow;
+  }
+  self.onmessage = async ev => {
+    const { id, cmd } = ev.data;
+    try {
+      if (cmd === 'head') {
+        if (ev.data.file) { file = ev.data.file; await loadMeta(); }
+        const si = ev.data.sheet || 0, aoa = [];
+        const lastRow = await scanSheet(si, null, (rn, cells) => { if (rn > 30) return false; aoa[rn - 1] = Array.from(cells, v => v ?? ''); }, null);
+        for (let i = 0; i < aoa.length; i++) if (!aoa[i]) aoa[i] = [];
+        self.postMessage({ id, ok: true, sheets: sheets.map(s => s.name), aoa, lastRow });
+      } else if (cmd === 'rows') {
+        const { sheet, headerRow, cols } = ev.data, set = new Set(cols);
+        const outCols = cols.map(() => []), rowNums = [];
+        await scanSheet(sheet, (rn, ci) => rn > headerRow + 1 && set.has(ci), (rn, cells) => {
+          if (rn <= headerRow + 1) return;
+          let any = false; for (const c of cols) { const v = cells[c]; if (v !== undefined && v !== '') { any = true; break; } }
+          if (!any) return;
+          for (let k = 0; k < cols.length; k++) outCols[k].push(cells[cols[k]] ?? '');
+          rowNums.push(rn);
+        }, (rn, last) => self.postMessage({ id, progress: last ? Math.min(0.99, rn / last) : null, rows: rn }));
+        const rn = Int32Array.from(rowNums);
+        self.postMessage({ id, ok: true, cols: outCols, rowNums: rn }, [rn.buffer]);
+      }
+    } catch (e) { self.postMessage({ id, ok: false, error: String(e && e.message || e) }); }
+  };
+}
+const canStream = typeof Worker !== 'undefined' && typeof DecompressionStream !== 'undefined' && typeof TextDecoderStream !== 'undefined';
+let workerURL = null;
+function makeWorker() {
+  workerURL ||= URL.createObjectURL(new Blob(['(' + workerMain.toString() + ')()'], { type: 'text/javascript' }));
+  const w = new Worker(workerURL); let seq = 0; const pend = new Map();
+  w.onmessage = ev => { const p = pend.get(ev.data.id); if (!p) return;
+    if ('progress' in ev.data) { p.onProgress && p.onProgress(ev.data); return; }
+    pend.delete(ev.data.id); ev.data.ok ? p.res(ev.data) : p.rej(new Error(ev.data.error)); };
+  w.onerror = e => { for (const p of pend.values()) p.rej(new Error(e.message || 'Ошибка чтения файла')); pend.clear(); };
+  return { call(msg, onProgress) { return new Promise((res, rej) => { const id = ++seq; pend.set(id, { res, rej, onProgress }); w.postMessage({ ...msg, id }); }); },
+           terminate() { w.terminate(); } };
+}
+
+const nk = s => String(s ?? '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]/g, '');
+function detectHeaderRow(aoa) {
+  let best = 0, score = -1;
+  for (let i = 0; i < Math.min(aoa.length, 25); i++) {
+    const s = (aoa[i] || []).filter(c => typeof c === 'string' && c.trim() && isNaN(Number(c.replace(',', '.')))).length;
+    if (s > score) { score = s; best = i; }
+  }
+  return best;
+}
+function colName(j) { let s = '', n = j + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function headersOf(slot) {
+  const a = slot.preview, h = a[slot.headerRow] || [];
+  const width = Math.max(h.length, ...a.slice(slot.headerRow, slot.headerRow + 30).map(r => (r || []).length), 0);
+  return Array.from({ length: width }, (_, j) => `${colName(j)} · ${String(h[j] ?? '').trim() || '—'}`);
+}
+function automap(docId, headers) {
+  const m = {}, used = new Set();
+  const hs = headers.map(h => nk(h.replace(/^[A-Z]+ · /, '')));
+  for (const f of DOC_TYPES[docId].fields) for (const a of f.aliases) {
+    const na = nk(a), j = hs.findIndex((h, i) => !used.has(i) && h.includes(na));
+    if (j >= 0) { m[f.key] = j; used.add(j); break; }
+  }
+  return m;
+}
+
+/* слот: fileName, kind ('stream' | 'sheetjs'), sheets, sheet, preview, headerRow, headers, map, records, loading, error */
+async function openFile(docId, file) {
+  const key = poolKey(docId);
+  const old = state.pool[key]; if (old?.worker) old.worker.terminate();
+  const slot = { fileName: file.name, size: file.size, ui: {}, loading: { label: 'Открываю файл…', p: null }, sheet: 0 };
+  state.pool[key] = slot; touchDoc(docId); renderSlots(); renderReport(); renderParams();
+  try {
+    if (/\.xls[xm]$/i.test(file.name) && canStream) {
+      slot.kind = 'stream'; slot.worker = makeWorker();
+      slot.loading.label = 'Читаю словарь строк…'; updateProgress(docId);
+      const h = await slot.worker.call({ cmd: 'head', file, sheet: 0 });
+      slot.sheets = h.sheets; slot.preview = h.aoa; slot.lastRow = h.lastRow;
+    } else {
+      slot.kind = 'sheetjs';
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, dense: true });
+      slot.wb = wb; slot.sheets = wb.SheetNames; sheetjsLoad(slot);
+    }
+    slot.headerRow = detectHeaderRow(slot.preview); slot.headers = headersOf(slot); slot.map = automap(docId, slot.headers);
+    await loadRows(docId, slot);
+  } catch (e) {
+    console.error(e); slot.loading = null; slot.error = `Не удалось прочитать «${file.name}»: ${e.message}`;
+    renderSlots();
+  }
+}
+function sheetjsLoad(slot) {
+  const ws = slot.wb.Sheets[slot.wb.SheetNames[slot.sheet]];
+  slot.aoa = ws && ws['!ref'] ? XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: true, raw: true }) : [];
+  const off = ws && ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']).s.r : 0;
+  if (off) slot.aoa = Array(off).fill([]).concat(slot.aoa);
+  slot.preview = slot.aoa.slice(0, 30);
+}
+async function loadRows(docId, slot) {
+  const fields = Object.keys(slot.map), cols = fields.map(k => slot.map[k]);
+  const req = (slot.req = (slot.req || 0) + 1);
+  slot.records = null; slot.error = null;
+  slot.loading = { label: 'Читаю строки…', p: 0 }; renderSlots(); renderRunState();
+  let colsData, rowNums;
+  if (slot.kind === 'stream') {
+    const res = await slot.worker.call({ cmd: 'rows', sheet: slot.sheet, headerRow: slot.headerRow, cols }, pr => {
+      if (slot.req !== req) return;
+      slot.loading.p = pr.progress; slot.loading.label = `Читаю строки… ${pr.rows.toLocaleString('ru-RU')}`; updateProgress(docId);
+    });
+    colsData = res.cols; rowNums = res.rowNums;
+  } else {
+    colsData = cols.map(() => []); rowNums = [];
+    for (let i = slot.headerRow + 1; i < slot.aoa.length; i++) {
+      const raw = slot.aoa[i] || [];
+      if (!cols.some(c => raw[c] !== undefined && raw[c] !== '')) continue;
+      cols.forEach((c, k) => colsData[k].push(raw[c] ?? '')); rowNums.push(i + 1);
+    }
+  }
+  if (slot.req !== req) return;
+  const n = rowNums.length, recs = new Array(n);
+  for (let i = 0; i < n; i++) { const r = { _row: rowNums[i] }; for (let k = 0; k < fields.length; k++) r[fields[k]] = colsData[k][i]; recs[i] = r; }
+  slot.records = recs; slot.loading = null;
+  touchDoc(docId); autoYear(); renderParams(); renderSlots(); renderReport(); renderRunState();
+}
+async function reHead(docId, slot) {
+  if (slot.kind === 'stream') {
+    slot.loading = { label: 'Открываю лист…', p: null }; renderSlots();
+    const h = await slot.worker.call({ cmd: 'head', sheet: slot.sheet }); slot.preview = h.aoa; slot.lastRow = h.lastRow;
+  } else sheetjsLoad(slot);
+  slot.headerRow = detectHeaderRow(slot.preview); slot.headers = headersOf(slot); slot.map = automap(docId, slot.headers);
+}
+
+/* =====================================================================
+   6. СОСТОЯНИЕ
+   Файлы общие: ОНВОС — один на все виды и категории; остальные — один на вид воздействия.
+   ===================================================================== */
+const state = { impact: 'air', cat: 'II', pool: {}, buckets: {}, filter: { sev: 'all', rule: 'all', q: '', onlyBad: true }, view: 'findings' };
+try { const s = JSON.parse(localStorage.getItem('sverka-nvos-nav') || '{}'); if (s.impact) state.impact = s.impact; if (s.cat) state.cat = s.cat; } catch (e) {}
+function saveNav() { try { localStorage.setItem('sverka-nvos-nav', JSON.stringify({ impact: state.impact, cat: state.cat })); } catch (e) {} }
+const poolKey = (d, impact = state.impact) => d === 'ONVOS' ? 'ONVOS' : impact + '/' + d;
+const slotOf = (d, impact = state.impact) => state.pool[poolKey(d, impact)];
+function bucket(impact = state.impact, cat = state.cat) {
+  const k = impact + '/' + cat;
+  return state.buckets[k] || (state.buckets[k] = { report: null, stale: false, settings: { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001 } });
+}
+const curCat = () => CATEGORIES.find(c => c.id === state.cat);
+const curImpact = () => IMPACTS.find(i => i.id === state.impact);
+function touchDoc(d) {
+  for (const [k, b] of Object.entries(state.buckets)) {
+    const [imp, cat] = k.split('/');
+    if (b.report && CATEGORIES.find(c => c.id === cat).docs.includes(d) && (d === 'ONVOS' || imp === state.impact)) b.stale = true;
+  }
+}
+function yearsAvailable() {
+  const ys = new Set();
+  for (const d of ['DPNVOS', 'DVOS']) { const s = slotOf(d); if (s?.records && s.map.year != null) for (const r of s.records) { const y = yearOf(r.year); if (y && y > 1990 && y < 2100) ys.add(y); } }
+  return ys;
+}
+function autoYear() {
+  const b = bucket(); if (!b.settings.yearAuto) return;
+  const s = slotOf('DPNVOS'); if (!s?.records || s.map.year == null) return;
+  let max = 0; for (const r of s.records) { const y = yearOf(r.year); if (y && y < 2100 && y > max) max = y; }
+  if (max) b.settings.year = max;
+}
+
+/* =====================================================================
+   7. ОТРИСОВКА
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+const ICON = {
+  air: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10a3 3 0 1 0-3-3"/><path d="M3 12h15a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg>',
+  water: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>',
+  check: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  upload: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+  file: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13l2 2 4-4"/></svg>',
+};
+function renderNav() {
+  $('#impacts').innerHTML = '<div class="side-lbl">Вид воздействия</div>' + IMPACTS.map(i => `<button class="nav-item" data-act="impact" data-id="${i.id}" aria-pressed="${i.id === state.impact}">${ICON[i.id]}${i.label}</button>`).join('');
+  $('#cats').innerHTML = CATEGORIES.map(c => `<button class="cat" data-act="cat" data-id="${c.id}" aria-pressed="${c.id === state.cat}">
+      <span class="roman">${c.id}</span><span class="ct"><b>${c.label}</b><small>${c.stub ? 'в разработке' : c.docs.map(short).join(' · ')}</small></span></button>`).join('');
+  $('#crumb').innerHTML = `${curImpact().label} <i>/</i> ${curCat().label}`;
+  $('#slots-title').textContent = curCat().stub ? curCat().label : `Сверка ${curCat().docs.map(short).join(' · ')}`;
+  renderRunState();
+}
+function renderRunState() {
+  const cat = curCat(), loading = cat.docs.some(d => slotOf(d)?.loading);
+  $('#btn-demo').disabled = !!cat.stub; $('#btn-clear').disabled = !!cat.stub;
+  $('#btn-run').disabled = !!cat.stub || loading;
+  $('#btn-run').textContent = loading ? 'Файлы загружаются…' : 'Запустить проверку';
+}
+function renderParams() {
+  const cat = curCat();
+  if (!cat.params) { $('#params').innerHTML = `<div class="side-lbl">Параметры</div><p class="side-note">${cat.stub ? 'Категория в разработке.' : 'Для этой категории параметры пока не нужны.'}</p>`; return; }
+  const st = bucket().settings, ys = yearsAvailable(), now = new Date().getFullYear();
+  for (let y = now - 7; y <= now; y++) ys.add(y); ys.add(st.year);
+  const list = [...ys].sort((a, b) => b - a);
+  const dpY = slotOf('DPNVOS')?.records ? [...new Set(slotOf('DPNVOS').records.map(r => yearOf(r.year)).filter(Boolean))].sort() : [];
+  $('#params').innerHTML = `<div class="side-lbl">Параметры сверки</div>
+    <label class="fld" for="p-year">Отчётный год
+      <select id="p-year">${list.map(y => `<option value="${y}" ${y === st.year ? 'selected' : ''}>${y}${dpY.includes(y) ? ' · есть в ДПНВОС' : ''}</option>`).join('')}</select></label>
+    <label class="fld" for="p-tol">Допуск по массе, т
+      <input id="p-tol" type="text" inputmode="decimal" value="${st.tol}"></label>
+    <p class="side-note">Год задаёт строки ДПНВОС, проверку 7-летнего срока ДВОС и исключения из реестра.${dpY.length && !dpY.includes(st.year) ? ` <b>В ДПНВОС нет строк за ${st.year} (есть: ${dpY.join(', ')}).</b>` : ''}</p>`;
+}
+
+function renderSlots() {
+  const cat = curCat();
+  if (cat.stub) {
+    $('#slots').innerHTML = `<div class="stub" style="grid-column:1/-1"><b>I категория — в разработке</b>Состав документов и условия сверки для объектов I категории будут добавлены позже.</div>`;
+    return;
+  }
+  $('#slots').innerHTML = cat.docs.map(d => slotHTML(d, slotOf(d))).join('');
+}
+function fileInput(fid, d) { return `<input type="file" id="${fid}" data-act="file" data-doc="${d}" accept=".xlsx,.xlsm,.xls,.csv" hidden>`; }
+function slotHTML(d, s) {
+  const t = DOC_TYPES[d], fid = `f-${poolKey(d).replace('/', '-')}`, idx = curCat().docs.indexOf(d) + 1;
+  let st;
+  if (!s) st = ['', 'Ожидает файл'];
+  else if (s.error) st = ['bad', 'Ошибка'];
+  else if (s.loading || !s.headers) st = ['load', 'Чтение…'];
+  else { const miss = t.fields.filter(x => x.required && s.map[x.key] == null).length;
+    st = miss ? ['bad', `Нет столбцов: ${miss}`] : ['ok', `${(s.records?.length || 0).toLocaleString('ru-RU')} строк`]; }
+  const head = `<div class="slot-h"><span class="step ${st[0]}">${st[0] === 'ok' ? ICON.check : idx}</span>
+    <div class="slot-t"><b>${t.short}</b><small>${t.title}</small></div><span class="chip ${st[0]}">${st[1]}</span></div>`;
+  const sharedNote = d === 'ONVOS' ? '<div class="shared">Один файл на все категории и виды воздействия</div>' : '<div class="shared">Общий для всех категорий этого вида воздействия</div>';
+  if (!s) return `<article class="slot" data-doc="${d}">${head}
+      <label class="drop" for="${fid}">${ICON.upload}<span>Перетащите файл или <u>выберите</u></span><small>.xlsx, .xls, .csv · до сотен тысяч строк</small></label>${fileInput(fid, d)}${sharedNote}</article>`;
+  const nameLine = `<div class="file"><span class="name">${ICON.file}${esc(s.fileName)}</span>${s.demo ? '<span class="badge">пример</span>' : ''}</div>`;
+  if (s.error) return `<article class="slot" data-doc="${d}">${head}${nameLine}<div class="errbox">${esc(s.error)}</div>
+      <div class="file"><label class="btn small" for="${fid}">Выбрать другой файл</label>${fileInput(fid, d)}</div></article>`;
+  if (s.loading || !s.headers) return `<article class="slot" data-doc="${d}">${head}${nameLine}
+      <div class="prog" id="prog-${d}"><span class="lbl">${esc(s.loading?.label || 'Загрузка…')}</span><div class="track"><div class="fill" style="width:${s.loading?.p != null ? Math.round(s.loading.p * 100) : 4}%"></div></div>
+      ${s.size > 20e6 ? '<span>Большой файл — чтение может занять до минуты.</span>' : ''}</div></article>`;
+  const rows = s.records ? s.records.length : 0;
+  const req = t.fields.filter(x => x.required), okReq = req.filter(x => s.map[x.key] != null).length;
+  const mapped = t.fields.filter(x => s.map[x.key] != null).length;
+  const opts = sel => `<option value="">— не выбрано —</option>` + s.headers.map((h, j) => `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(h)}</option>`).join('');
+  const prevRows = s.preview.slice(s.headerRow + 1, s.headerRow + 6);
+  return `<article class="slot" data-doc="${d}">${head}${nameLine}
+    <div class="meta">
+      ${s.sheets.length > 1 ? `<label>Лист <select id="sh-${fid}" data-act="sheet" data-doc="${d}">${s.sheets.map((n, i) => `<option value="${i}" ${i === s.sheet ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : `<span>Лист: ${esc(s.sheets[0])}</span>`}
+      <label>Заголовки в строке <input id="hr-${fid}" type="number" min="1" max="30" value="${s.headerRow + 1}" data-act="hdr" data-doc="${d}"></label>
+    </div>
+    <div class="mapstate"><span class="dot ${okReq < req.length ? 'bad' : ''}"></span>
+      ${okReq < req.length ? `Не найдено обязательных столбцов: ${req.length - okReq}` : `Сопоставлено полей: ${mapped} из ${t.fields.length}`}</div>
+    <details data-ui="map" ${s.ui.map || okReq < req.length ? 'open' : ''}><summary>Столбцы</summary>
+      <table class="maptbl">${t.fields.map(x => `<tr><td>${x.label}${x.required ? ' <span class="req">*</span>' : ''}</td>
+        <td><select id="m-${fid}-${x.key}" data-act="map" data-doc="${d}" data-field="${x.key}" class="${x.required && s.map[x.key] == null ? 'unset' : ''}">${opts(s.map[x.key])}</select></td></tr>`).join('')}</table>
+    </details>
+    <details data-ui="prev" ${s.ui.prev ? 'open' : ''}><summary>Предпросмотр</summary>
+      <div class="scroll"><table class="prev"><tr>${s.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>
+        ${prevRows.map(r => `<tr>${s.headers.map((_, j) => `<td>${esc((r || [])[j] instanceof Date ? r[j].toLocaleDateString('ru-RU') : (r || [])[j])}</td>`).join('')}</tr>`).join('')}</table></div>
+    </details>
+    ${sharedNote}
+    <div class="file">
+      <label class="btn small" for="${fid}">Заменить файл</label>${fileInput(fid, d)}
+      <button class="btn ghost small" data-act="remove" data-doc="${d}">Убрать</button>
+    </div>
+  </article>`;
+}
+function updateProgress(d) {
+  const el = document.getElementById('prog-' + d), s = slotOf(d);
+  if (!el || !s?.loading) return;
+  el.querySelector('.lbl').textContent = s.loading.label;
+  el.querySelector('.fill').style.width = (s.loading.p != null ? Math.round(s.loading.p * 100) : 4) + '%';
+}
+
+const SEV = { error: 'Ошибка', warning: 'Предупреждение' };
+const STATUS = { ok: ['ok', 'Пройдена'], fail: ['fail', 'Ошибки'], warn: ['warnp', 'Замечания'], skip: ['skip', 'Не выполнена'] };
+const VALID = { full: ['ok', 'входит'], partial: ['warnp', 'частично'], expired: ['fail', 'не входит (истекла)'], future: ['fail', 'не входит (подана позже)'], nodate: ['fail', 'нет даты подачи'], none: ['fail', 'нет ДВОС'] };
+
+function renderReport() {
+  const b = bucket(), r = b.report, cat = curCat();
+  if (cat.stub) { $('#report').innerHTML = ''; return; }
+  if (!r) { $('#report').innerHTML = `<div class="report"><div class="rep-h"><h2>Отчёт</h2></div><div class="panel empty">Загрузите документы и нажмите «Запустить проверку».</div></div>`; return; }
+  const errs = r.findings.filter(x => x.severity === 'error').length, warns = r.findings.length - errs;
+  const okRules = r.results.filter(x => x.status === 'ok').length, skipRules = r.results.filter(x => x.status === 'skip').length;
+  const ruleIds = [...new Set(r.findings.map(x => x.ruleId))];
+  if (state.filter.rule !== 'all' && !ruleIds.includes(state.filter.rule)) state.filter.rule = 'all';
+  if (!r.objects) state.view = 'findings';
+  const objBad = r.objects ? r.objects.filter(o => o.errors || o.warnings).length : 0;
+  $('#report').innerHTML = `<div class="report">
+    <div class="rep-h">
+      <div><h2>Отчёт о сверке</h2>
+        <div class="note">${IMPACTS.find(i => i.id === r.impact).label} · ${r.category} категория${r.category === 'II' ? ` · отчётный год ${r.settings.year}` : ''} · ${r.at.toLocaleString('ru-RU')}</div></div>
+      <button class="btn" data-act="export" id="btn-export">Скачать отчёт .xlsx</button>
+    </div>
+    ${b.stale ? '<div class="stale">Данные или параметры изменились после проверки — запустите её заново.</div>' : ''}
+    <div class="stats">
+      <div class="stat err"><b>${errs.toLocaleString('ru-RU')}</b><span>ошибок</span></div>
+      <div class="stat warn"><b>${warns.toLocaleString('ru-RU')}</b><span>предупреждений</span></div>
+      ${r.objects ? `<div class="stat"><b>${objBad.toLocaleString('ru-RU')} / ${r.objects.length.toLocaleString('ru-RU')}</b><span>объектов с замечаниями</span></div>` : ''}
+      <div class="stat ok"><b>${okRules}</b><span>проверок пройдено</span></div>
+      <div class="stat"><b>${skipRules}</b><span>не выполнено</span></div>
+    </div>
+    ${(() => {
+      const ruleRow = x => `<div class="rule">
+        <span class="rid">${esc(x.id)}</span>
+        <div class="rt">${esc(x.title)}${x.draft ? '<span class="draft">шаблон</span>' : ''}${x.note ? `<small>${esc(x.note)}</small>` : ''}</div>
+        <span class="pill ${STATUS[x.status][0]}">${STATUS[x.status][1]}${x.status === 'fail' ? ': ' + x.errors.toLocaleString('ru-RU') + (x.count > x.errors ? ` + ${x.count - x.errors} пред.` : '') : x.count ? ': ' + x.count.toLocaleString('ru-RU') : ''}</span></div>`;
+      const tech = r.results.filter(x => x.id.startsWith('T-')), main = r.results.filter(x => !x.id.startsWith('T-'));
+      const techOk = tech.filter(x => x.status === 'ok').length;
+      return `<div class="rules">${main.map(ruleRow).join('')}
+        <details class="tech" ${tech.some(x => x.status === 'fail' || x.status === 'skip') ? 'open' : ''}><summary>Технические проверки файлов · пройдено ${techOk} из ${tech.length}</summary>${tech.map(ruleRow).join('')}</details></div>`;
+    })()}
+    ${r.objects ? `<div class="tabs" role="tablist">
+      <button role="tab" data-act="view" data-id="findings" aria-selected="${state.view === 'findings'}">Замечания</button>
+      <button role="tab" data-act="view" data-id="objects" aria-selected="${state.view === 'objects'}">По объектам</button></div>` : ''}
+    <div class="filters">
+      ${state.view === 'findings' ? `
+      <select id="flt-sev" aria-label="Уровень"><option value="all">Все уровни</option><option value="error" ${state.filter.sev === 'error' ? 'selected' : ''}>Ошибки</option><option value="warning" ${state.filter.sev === 'warning' ? 'selected' : ''}>Предупреждения</option></select>
+      <select id="flt-rule" aria-label="Проверка"><option value="all">Все проверки</option>${ruleIds.map(id => `<option ${state.filter.rule === id ? 'selected' : ''}>${esc(id)}</option>`).join('')}</select>`
+      : `<label><input type="checkbox" id="flt-bad" ${state.filter.onlyBad ? 'checked' : ''}> только с замечаниями</label>`}
+      <input id="flt-q" type="search" placeholder="Код объекта, ИНН, вещество, описание" value="${esc(state.filter.q)}">
+    </div>
+    <div class="fwrap" id="findings"></div>
+  </div>`;
+  renderTable(); updateExportBtn();
+}
+
+function valCell(v) {
+  if (!v || v.t === 'na') return '<td class="v na">—</td>';
+  if (v.t === 'miss') return '<td class="v miss"><span>нет</span></td>';
+  if (v.t === 'empty') return '<td class="v miss"><span>пусто</span></td>';
+  return `<td class="v">${fmtNum(v.n)}</td>`;
+}
+function renderTable() {
+  const r = bucket().report; if (!r) return;
+  const qq = state.filter.q.trim().toLowerCase();
+  if (state.view === 'objects' && r.objects) {
+    const list = r.objects.filter(o => (!state.filter.onlyBad || o.errors || o.warnings) && (!qq || [o.code, o.inn, o.name, o.dpNo, o.dvNo].join(' ').toLowerCase().includes(qq)));
+    if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
+    const shown = list.slice(0, 1500);
+    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Объект / ИНН</th><th>Наименование</th><th>Кат. реестра</th><th>Исключён</th><th>ДПНВОС №</th><th>ДВОС № / дата</th><th>ДВОС в ${r.settings.year}</th><th>ЗВ: ДП / ОН / ДВ</th><th>Ошибок</th><th>Пред.</th></tr></thead><tbody>
+      ${shown.map(o => `<tr><td class="obj">${esc(o.code)}<small>${esc(o.inn)}</small></td><td>${esc(o.name)}</td>
+        <td class="num">${o.inReg ? esc(o.onCat) : '<span class="pill fail">нет в реестре</span>'}</td><td class="num">${fmtDate(o.dateOut)}</td>
+        <td class="num">${o.dpNo ? esc(o.dpNo) : '<span class="pill fail">нет</span>'}</td>
+        <td class="num">${o.dvNo ? `${esc(o.dvNo)}<br><span class="note">${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</span>` : '—'}</td>
+        <td><span class="pill ${VALID[o.dvValid][0]}">${VALID[o.dvValid][1]}</span></td>
+        <td class="num">${[o.zvDp, o.zvOn, o.zvDv].map(x => x == null ? '—' : x).join(' / ')}</td>
+        <td class="num" style="color:${o.errors ? 'var(--err)' : 'inherit'}">${o.errors}</td><td class="num">${o.warnings}</td></tr>`).join('')}
+      </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
+    return;
+  }
+  const { sev, rule } = state.filter;
+  const list = r.findings.filter(x => (sev === 'all' || x.severity === sev) && (rule === 'all' || x.ruleId === rule) &&
+    (!qq || [x.objectCode, x.inn, x.zvCode, x.zvName, x.message, x.kind, x.ruleId].join(' ').toLowerCase().includes(qq)));
+  if (!list.length) { $('#findings').innerHTML = `<div class="empty">${r.findings.length ? 'Под фильтр ничего не попало.' : 'Расхождений не найдено.'}</div>`; return; }
+  const shown = list.slice(0, 1500), hasVals = r.findings.some(x => x.vals);
+  $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Уровень</th><th>Проверка</th><th>Объект / ИНН</th><th>ЗВ</th>
+    ${hasVals ? '<th>ДПНВОС, т</th><th>ОНВОС, т</th><th>ДВОС, т</th>' : ''}<th>Описание</th><th>Строка</th></tr></thead><tbody>
+    ${shown.map(x => `<tr class="${x.severity}"><td class="sev">${SEV[x.severity]}</td><td class="num">${esc(x.ruleId)}</td>
+      <td class="obj">${esc(x.objectCode || '')}<small>${esc(x.inn || '')}</small></td>
+      <td class="zv"><span class="mono">${esc(x.zvCode || '')}</span><small>${esc(x.zvName || '')}</small></td>
+      ${hasVals ? (x.vals ? valCell(x.vals.DPNVOS) + valCell(x.vals.ONVOS) + valCell(x.vals.DVOS) : '<td></td><td></td><td></td>') : ''}
+      <td>${x.kind ? `<span class="kind ${x.kindCls || ''}">${esc(x.kind)}</span><br>` : ''}${esc(x.message)}</td>
+      <td class="num">${x.doc ? short(x.doc) : ''}${x.row ? ' : ' + x.row : ''}</td></tr>`).join('')}
+    </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
+}
+function renderAll() { renderNav(); renderParams(); renderSlots(); renderReport(); }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 3500); }
+
+/* =====================================================================
+   8. ВЫГРУЗКА ОТЧЁТА
+   ===================================================================== */
+let downloads = null;
+(async () => { try { downloads = window.claude?.use ? await window.claude.use('downloads') : null; } catch (e) { downloads = null; } updateExportBtn(); })();
+const inClaude = !!window.claude?.use;
+function updateExportBtn() { const b = $('#btn-export'); if (!b) return; const ok = downloads || !inClaude; b.disabled = !ok; b.title = ok ? '' : 'Скачивание недоступно в этом окне просмотра'; }
+const vText = v => !v || v.t === 'na' ? '' : v.t === 'miss' ? 'нет' : v.t === 'empty' ? 'пусто' : v.n;
+
+function buildReportWorkbook(r) {
+  const wb = XLSX.utils.book_new(), imp = IMPACTS.find(i => i.id === r.impact).label;
+  const sheet = (aoa, cols, name, filter) => { const s = XLSX.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; XLSX.utils.book_append_sheet(wb, s, name); };
+  sheet([['Отчёт о сверке документов НВОС'], [],
+    ['Вид воздействия', imp], ['Категория объекта', r.category], ...(r.category === 'II' ? [['Отчётный год', r.settings.year], ['Допуск по массе, т', r.settings.tol]] : []),
+    ['Дата проверки', r.at.toLocaleString('ru-RU')], [],
+    ['Документ', 'Файл', 'Строк данных'],
+    ...r.files.map(x => [short(x.doc) + ' — ' + DOC_TYPES[x.doc].title, x.fileName ? x.fileName + (x.demo ? ' (пример)' : '') : 'не загружен', x.rows]), [],
+    ['Ошибок', r.findings.filter(x => x.severity === 'error').length], ['Предупреждений', r.findings.filter(x => x.severity === 'warning').length],
+    ...(r.objects ? [['Объектов в проверке', r.objects.length], ['Объектов с замечаниями', r.objects.filter(o => o.errors || o.warnings).length]] : []),
+  ], [52, 44, 14], 'Сводка');
+  sheet([['ID', 'Проверка', 'Документы', 'Статус', 'Ошибок', 'Всего замечаний', 'Комментарий'],
+    ...r.results.map(x => [x.id, x.title, x.docs.map(short).join(', '), STATUS[x.status][1], x.errors, x.count, x.note])], [14, 56, 22, 14, 10, 14, 50], 'Проверки', true);
+  sheet([['№', 'Уровень', 'Проверка', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Наименование ЗВ', 'ДПНВОС, т', 'ОНВОС, т', 'ДВОС, т', 'Тип', 'Описание', 'Документ', 'Строка в файле'],
+    ...r.findings.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.objectCode || '', x.inn || '', x.objectName || '', x.zvCode || '', x.zvName || '',
+      vText(x.vals?.DPNVOS), vText(x.vals?.ONVOS), vText(x.vals?.DVOS), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
+    [6, 15, 12, 19, 13, 36, 9, 36, 12, 12, 12, 18, 60, 10, 10], 'Замечания', true);
+  if (r.objects) sheet([['Код объекта', 'ИНН', 'Наименование', 'Категория в реестре', 'Дата исключения', 'ДПНВОС №', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', `ДВОС в ${r.settings.year}`, 'ЗВ в ДПНВОС', 'ЗВ в ОНВОС', 'ЗВ в ДВОС', 'Ошибок', 'Предупреждений'],
+    ...r.objects.map(o => [o.code, o.inn, o.name, o.inReg ? o.onCat : 'нет в реестре', fmtDate(o.dateOut), o.dpNo || 'нет', o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), VALID[o.dvValid][1], o.zvDp ?? '', o.zvOn ?? '', o.zvDv ?? '', o.errors, o.warnings])],
+    [19, 13, 40, 12, 14, 14, 12, 14, 14, 22, 10, 10, 10, 9, 12], 'По объектам', true);
+  return wb;
+}
+async function exportReport() {
+  const r = bucket().report; if (!r || (!downloads && inClaude)) return;
+  const buf = XLSX.write(buildReportWorkbook(r), { bookType: 'xlsx', type: 'array', compression: true });
+  const d = r.at, p = n => String(n).padStart(2, '0');
+  const name = `Сверка_НВОС_${IMPACTS.find(i => i.id === r.impact).label}_${r.category}${r.category === 'II' ? '_' + r.settings.year : ''}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`;
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  if (!downloads) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Sverka_NVOS_${r.impact === 'air' ? 'vybrosy' : 'sbrosy'}_${r.category}${r.category === 'II' ? '_' + r.settings.year : ''}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Отчёт скачан'); return; }
+  try { await downloads.save({ filename: name, data: blob }); toast('Отчёт сохранён'); }
+  catch (e) { if (e?.code === 'declined') return; toast(e?.code === 'rate_limited' ? 'Окно сохранения уже открыто' : 'Не удалось сохранить файл: ' + (e?.message || e?.code || 'ошибка')); }
+}
+
+/* =====================================================================
+   9. ПРИМЕР (выдуманные данные в формате реальных выгрузок, помечаются «пример»)
+   ===================================================================== */
+function demoData(impact) {
+  const w = impact === 'water', g = w ? 'сброс' : 'выброс', src = w ? 'Источник сбросов' : 'Источник выбросов', other = w ? 'Источник выбросов' : 'Источник сбросов';
+  const A = ['45-0277-004034-П', '5032199155', 'Площадка ООО «Терминал»'], B = ['45-0177-001234-П', '7701234567', 'Котельная № 3'],
+        C = ['45-0177-004512-П', '7709876543', 'Автобаза Северная'], D = ['45-0277-007788-П', '7705551122', 'Цех металлообработки'],
+        E = ['45-0177-009001-П', '7703332211', 'Склад ГСМ'], G = ['45-0277-003000-П', '7700000002', 'Типография'];
+  const on = [['Номер ОНВОС', 'Наименование ОНВОС', 'Категория объекта', 'Дата включения в реестр', 'Дата исключения из реестра', 'ИНН', 'Тип источника', 'Номер источника', 'Код вещества', 'Наименование вещества', 'Масса выбросов/сбросов'],
+    [A[0], A[2], 2, '12.03.2018', '', A[1], src, '6001', '0301', 'Азота диоксид', 0.140382], [A[0], A[2], 2, '12.03.2018', '', A[1], src, '6001', '0337', 'Углерод оксид', 0.3],
+    [A[0], A[2], 2, '12.03.2018', '', A[1], src, '0002', '0337', 'Углерод оксид', 0.249213], [A[0], A[2], 2, '12.03.2018', '', A[1], src, '0002', '0328', 'Углерод (Сажа)', 0.000426],
+    [B[0], B[2], 2, '05.11.2017', '', B[1], src, '0001', '0301', 'Азота диоксид', 1.2], [B[0], B[2], 2, '05.11.2017', '', B[1], src, '0001', '0330', 'Сера диоксид', 0.5],
+    [B[0], B[2], 2, '05.11.2017', '', B[1], other, 'В1', 'ВЗВ', 'Взвешенные вещества', 0.02],
+    [C[0], C[2], 2, '22.12.2016', '15.06.2025', C[1], src, '6001', '0301', 'Азота диоксид', 0.3],
+    [D[0], D[2], 2, '03.11.2017', '', D[1], src, '0001', '0301', 'Азота диоксид', 0.8], [D[0], D[2], 2, '03.11.2017', '', D[1], src, '0001', '2902', 'Взвешенные вещества', 0.25],
+    [E[0], E[2], 3, '24.01.2017', '', E[1], src, '0001', '0337', 'Углерод оксид', 0.1],
+    [G[0], G[2], 2, '28.12.2016', '', G[1], src, '0001', '0301', 'Азота диоксид', 0.05]];
+  const dpH = ['Номер отчёта', 'Отчётный период', 'Статус отчёта', 'ИНН', 'Код объекта НВОС', 'Наименование объекта НВОС', 'Категория объекта НВОС', `Код источника ${g}ов`,
+    `Наименование ЗВ (${w ? 'Сбросы' : 'Выбросы'})`, `Код ЗВ (${w ? 'Сбросы' : 'Выбросы'})`, `Фактический ${g} ЗВ, всего(тонн)`, `Фактический ${g} ЗВ, ${w ? 'НДС' : 'НДВ'}, ТН(тонн)`, `Фактический ${g} ЗВ, в пределах ${w ? 'ВРС' : 'ВРВ'}`, `Фактический ${g} сверх`];
+  const dp = [dpH,
+    [13484472, 2025, 'Принято', A[1], A[0], A[2], 2, '6001', 'Азота диоксид', '0301', 0.140382, 0.140382, 0, 0],
+    [13484472, 2025, 'Принято', A[1], A[0], A[2], 2, '6001', 'Углерод оксид', '0337', 0.549213, 0.549213, 0, 0],
+    [13484472, 2025, 'Принято', A[1], A[0], A[2], 2, '0002', 'Углерод (Сажа)', '0328', 0.000426, 0.000426, 0, 0],
+    [13500001, 2025, 'Ожидает рассмотрения', B[1], B[0], B[2], 2, '0001', 'Азота диоксид', '0301', 1.5, 1.35, 0, 0.15],
+    [13500001, 2025, 'Ожидает рассмотрения', B[1], B[0], B[2], 2, '0001', 'Сера диоксид', '0330', 0.5, 0.5, 0, 0],
+    [13500001, 2025, 'Ожидает рассмотрения', B[1], B[0], B[2], 2, '0001', 'Бенз/а/пирен', '0703', 1e-7, 1e-7, 0, 0],
+    [13600002, 2025, 'На рассмотрении', '7700000001', G[0], G[2], 2, '0001', 'Азота диоксид', '0301', 0.05, 0.05, 0, 0],
+    [13700003, 2025, 'Принято', '7707070707', '45-0177-005555-П', 'Мастерская', 2, '0001', 'Углерод оксид', '0337', 0.07, 0.07, 0, 0],
+    [12000001, 2024, 'Принято', D[1], D[0], D[2], 2, '0001', 'Азота диоксид', '0301', 0.8, 0.8, 0, 0]];
+  const dvH = ['Номер отчёта', 'Дата подачи отчёта', 'Отчётный период', 'Статус отчёта', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория по данным Реестра', 'Номер источника', 'Загрязняющее вещество', 'Код загрязняющего вещества', `Масса ${g}ов тонн/год всего`];
+  const dv = [dvH,
+    [5044465, '18.08.2022', 2021, 'Принято', A[1], A[0], A[2], '2', '6001', 'Азота диоксид', '0301', 0.140382],
+    [5044465, '18.08.2022', 2021, 'Принято', A[1], A[0], A[2], '2', '6001', 'Углерод оксид', '0337', 0.549213],
+    [5044465, '18.08.2022', 2021, 'Принято', A[1], A[0], A[2], '2', '0002', 'Углерод (Сажа)', '0328', 0.000426],
+    [3100001, '10.03.2017', 2016, 'Принято', B[1], B[0], B[2], '2', '0001', 'Азота диоксид', '0301', 1.2],
+    [3100001, '10.03.2017', 2016, 'Принято', B[1], B[0], B[2], '2', '0001', 'Сера диоксид', '0330', 0.48],
+    [6000001, '01.07.2019', 2018, 'Принято', D[1], D[0], D[2], '2', '0001', 'Азота диоксид', '0301', 0.8],
+    [6000001, '01.07.2019', 2018, 'Принято', D[1], D[0], D[2], '2', '0001', 'Взвешенные вещества', '2902', ''],
+    [6100002, '20.05.2023', 2022, 'Принято', E[1], E[0], E[2], '3', '0001', 'Углерод оксид', '0337', 0.1]];
+  const pek = [['Код ОНВОС', 'ИНН', 'Код загрязняющего вещества', 'Загрязняющее вещество', `Масса ${g}ов тонн/год всего`],
+    [A[0], A[1], '0301', 'Азота диоксид', 0.140382], [A[0], A[1], '0337', 'Углерод оксид', 0.55], [B[0], B[1], '0301', 'Азота диоксид', 1.35]];
+  return { DPNVOS: dp, ONVOS: on, DVOS: dv, PEK: pek };
+}
+function loadDemo() {
+  const data = demoData(state.impact);
+  for (const d of curCat().docs) {
+    const key = poolKey(d); if (state.pool[key]?.worker) state.pool[key].worker.terminate();
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data[d]), 'Sheet1');
+    const s = { fileName: `пример_${short(d)}.xlsx`, demo: true, kind: 'sheetjs', wb, sheets: wb.SheetNames, sheet: 0, ui: {} };
+    sheetjsLoad(s); s.headerRow = detectHeaderRow(s.preview); s.headers = headersOf(s); s.map = automap(d, s.headers);
+    const fields = Object.keys(s.map), recs = [];
+    for (let i = s.headerRow + 1; i < s.aoa.length; i++) { const raw = s.aoa[i] || []; if (!raw.some(v => v !== '')) continue; const r = { _row: i + 1 }; for (const k of fields) r[k] = raw[s.map[k]]; recs.push(r); }
+    s.records = recs; state.pool[key] = s; touchDoc(d);
+  }
+  const b = bucket(); b.settings.yearAuto = true; autoYear();
+}
+
+/* =====================================================================
+   10. СОБЫТИЯ
+   ===================================================================== */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act, d = el.dataset.doc, b = bucket();
+  if (act === 'impact') { state.impact = el.dataset.id; saveNav(); autoYear(); renderAll(); }
+  else if (act === 'cat') { state.cat = el.dataset.id; saveNav(); autoYear(); renderAll(); }
+  else if (act === 'remove') { const s = slotOf(d); if (s?.worker) s.worker.terminate(); delete state.pool[poolKey(d)]; touchDoc(d); renderParams(); renderSlots(); renderReport(); renderRunState(); }
+  else if (act === 'demo') { loadDemo(); renderParams(); renderSlots(); renderReport(); toast('Загружены примеры — замените их своими файлами'); }
+  else if (act === 'clear') { for (const dd of curCat().docs) { const s = slotOf(dd); if (s?.worker) s.worker.terminate(); delete state.pool[poolKey(dd)]; touchDoc(dd); } b.report = null; b.stale = false; renderParams(); renderSlots(); renderReport(); renderRunState(); }
+  else if (act === 'view') { state.view = el.dataset.id; renderReport(); }
+  else if (act === 'run') {
+    if (!curCat().docs.some(dd => slotOf(dd)?.records)) { toast('Сначала загрузите хотя бы один документ'); return; }
+    const btn = $('#btn-run'); btn.disabled = true; btn.textContent = 'Проверяю…';
+    setTimeout(() => {
+      try { b.report = runChecks(state.impact, state.cat); b.stale = false; state.filter = { sev: 'all', rule: 'all', q: '', onlyBad: true }; }
+      catch (err) { console.error(err); toast('Проверка прервалась: ' + err.message); }
+      renderRunState(); renderReport();
+      $('#report').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    }, 30);
+  }
+  else if (act === 'export') exportReport();
+});
+
+document.addEventListener('change', async e => {
+  const el = e.target, act = el.dataset?.act, d = el.dataset?.doc;
+  if (el.id === 'flt-sev') { state.filter.sev = el.value; renderTable(); return; }
+  if (el.id === 'flt-rule') { state.filter.rule = el.value; renderTable(); return; }
+  if (el.id === 'flt-bad') { state.filter.onlyBad = el.checked; renderTable(); return; }
+  if (el.id === 'p-year') { const b = bucket(); b.settings.year = +el.value; b.settings.yearAuto = false; if (b.report) b.stale = true; renderParams(); renderReport(); return; }
+  if (el.id === 'p-tol') { const v = num(el.value); const b = bucket(); if (v == null || v < 0) { toast('Допуск — неотрицательное число, например 0,000001'); el.value = b.settings.tol; return; } b.settings.tol = v; if (b.report) b.stale = true; renderReport(); return; }
+  if (!act) return;
+  if (act === 'file' && el.files?.[0]) { openFile(d, el.files[0]); return; }
+  const s = slotOf(d); if (!s || s.loading) return;
+  try {
+    if (act === 'sheet') { s.sheet = +el.value; await reHead(d, s); }
+    else if (act === 'hdr') { s.headerRow = Math.min(29, Math.max(0, (parseInt(el.value, 10) || 1) - 1)); s.headers = headersOf(s); s.map = automap(d, s.headers); }
+    else if (act === 'map') { if (el.value === '') delete s.map[el.dataset.field]; else s.map[el.dataset.field] = Number(el.value); s.ui.map = true; }
+    if (s.demo) { s.kind = 'sheetjs'; }
+    await loadRows(d, s);
+  } catch (err) { s.loading = null; s.error = 'Ошибка чтения: ' + err.message; renderSlots(); renderRunState(); }
+});
+
+document.addEventListener('input', e => { if (e.target.id === 'flt-q') { state.filter.q = e.target.value; renderTable(); } });
+document.addEventListener('toggle', e => {
+  const det = e.target; if (!det.dataset?.ui) return;
+  const d = det.closest('.slot')?.dataset.doc, s = d && slotOf(d);
+  if (s) s.ui[det.dataset.ui] = det.open;
+}, true);
+
+const slotsEl = $('#slots');
+slotsEl.addEventListener('dragover', e => { const s = e.target.closest('.slot'); if (!s) return; e.preventDefault(); s.classList.add('drag'); });
+slotsEl.addEventListener('dragleave', e => { const s = e.target.closest('.slot'); if (s && !s.contains(e.relatedTarget)) s.classList.remove('drag'); });
+slotsEl.addEventListener('drop', e => {
+  const s = e.target.closest('.slot'); if (!s) return; e.preventDefault(); s.classList.remove('drag');
+  const fl = e.dataTransfer?.files?.[0]; if (fl) openFile(s.dataset.doc, fl);
+});
+
+/* ---------- старт: открываемся с примером II категории ---------- */
+function boot() {
+  if (typeof XLSX === 'undefined') { $('#slots').innerHTML = '<div class="stub" style="grid-column:1/-1"><b>Не загрузилась библиотека чтения Excel</b>Обновите страницу.</div>'; return; }
+  if (!curCat().stub) { loadDemo(); bucket().report = runChecks(state.impact, state.cat); bucket().stale = false; }
+  renderAll();
+}
+boot();
+</script>
+
+</body>
+</html>
