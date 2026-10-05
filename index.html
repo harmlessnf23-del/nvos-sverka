@@ -360,7 +360,7 @@ function matchesImpact(v, impact) { const s = String(v ?? '').toLowerCase(); ret
    needs — какие документы обязательны; fields — какие поля должны быть сопоставлены;
    categories / impacts — где применяется; perDoc — выполняется для каждого документа категории.
    ===================================================================== */
-const T3 = c => c === 'III' ? 'PEK' : 'DVOS';
+const T3 = c => c === 'III' ? 'PEK' : c === 'II' ? 'DVOS' : null;
 const RULES = [
   /* ---------- технические, для всех категорий ---------- */
   { id: 'T-01', title: 'Обязательные столбцы найдены', severity: 'error', perDoc: true,
@@ -402,7 +402,21 @@ const RULES = [
       }
       return out;
     } },
-  { id: c => `${c}-02`, title: 'Объект найден в реестре ОНВОС по коду и ИНН', severity: 'error', categories: ['II', 'III'],
+  { id: 'IV-01', title: 'Объекты IV категории указаны в ДПНВОС, если у природопользователя есть объекты I–III категории', severity: 'error', categories: ['IV'],
+    needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode', 'inn', 'reportNo'], ONVOS: ['objectCode', 'inn', 'category', 'dateOut'] },
+    run(ctx) {
+      const M = model(ctx), out = [];
+      for (const o of M.scope) {
+        if (!(o.on && o.on.hasImpact && o.on.cat === 'IV') || o.dp) continue;
+        const higher = M.innHas13.get(o.inn);
+        if (!higher) continue;
+        const why = `у природопользователя (ИНН ${o.inn}) есть объекты I–III категории: ${[...higher].slice(0, 3).join(', ')}${higher.size > 3 ? ` и ещё ${higher.size - 3}` : ''}`;
+        if (o.on.dateOut && o.on.dateOut <= M.y1) out.push(f(o, { severity: 'warning', kind: 'Исключён', doc: 'ONVOS', message: `Объект IV категории не указан в ДПНВОС за ${M.Y}, но исключён из реестра ${fmtDate(o.on.dateOut)}; ${why}` }));
+        else out.push(f(o, { kind: 'Нет в ДПНВОС', doc: 'ONVOS', message: `Объект IV категории не указан в ДПНВОС за ${M.Y}, хотя ${why}` }));
+      }
+      return out;
+    } },
+  { id: c => c === 'IV' ? 'IV-02' : `${c}-02`, title: 'Объект найден в реестре ОНВОС по коду и ИНН', severity: 'error', categories: ['II', 'III', 'IV'],
     needs: ['ONVOS'], fields: { ONVOS: ['objectCode', 'inn', 'category'] },
     run(ctx) {
       const M = model(ctx), out = [];
@@ -448,7 +462,7 @@ const RULES = [
       }
       return out;
     } },
-  { id: c => `${c}-04`, title: c => `Коды ЗВ совпадают в ДПНВОС, ОНВОС и ${short(T3(c))} (нет только в ДПНВОС — предупреждение)`, severity: 'error', categories: ['II', 'III'],
+  { id: c => c === 'IV' ? 'IV-03' : `${c}-04`, title: c => T3(c) ? `Коды ЗВ совпадают в ДПНВОС, ОНВОС и ${short(T3(c))} (нет только в ДПНВОС — предупреждение)` : 'Вещества объекта IV категории: наличие в ДПНВОС и ОНВОС совпадает (нет только в ДПНВОС — предупреждение)', severity: 'error', categories: ['II', 'III', 'IV'],
     needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode', 'inn', 'zvCode'], ONVOS: ['objectCode', 'inn', 'zvCode'] },
     run(ctx) {
       const M = model(ctx), out = [];
@@ -468,7 +482,7 @@ const RULES = [
       }
       return out;
     } },
-  { id: c => `${c}-05`, title: c => c === 'III' ? 'Масса ЗВ: ДПНВОС = ОНВОС (AE, т); ПЭК (X, г/с) = ОНВОС мощность (AD, г/с); меньше реестра — предупреждение' : 'Масса ЗВ совпадает: ДПНВОС = ОНВОС = ДВОС (меньше реестра — предупреждение)', severity: 'error', categories: ['II', 'III'],
+  { id: c => c === 'IV' ? 'IV-04' : `${c}-05`, title: c => c === 'IV' ? 'Масса ЗВ: ДПНВОС W = ОНВОС AE, т/год (меньше реестра — предупреждение)' : c === 'III' ? 'Масса ЗВ: ДПНВОС = ОНВОС (AE, т); ПЭК (X, г/с) = ОНВОС мощность (AD, г/с); меньше реестра — предупреждение' : 'Масса ЗВ совпадает: ДПНВОС = ОНВОС = ДВОС (меньше реестра — предупреждение)', severity: 'error', categories: ['II', 'III', 'IV'],
     needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode', 'inn', 'zvCode', 'mass'], ONVOS: ['objectCode', 'inn', 'zvCode', 'mass'] },
     run(ctx) {
       const M = model(ctx), tol = M.tol, out = [];
@@ -505,10 +519,6 @@ const RULES = [
       return out;
     } },
 
-  /* ---------- IV категория: шаблон, условия уточняются ---------- */
-  { id: 'X-01', title: 'Объекты из декларации есть в реестре ОНВОС', severity: 'error', draft: true, categories: ['IV'],
-    needs: ['DPNVOS', 'ONVOS'], fields: { DPNVOS: ['objectCode'], ONVOS: ['objectCode'] },
-    run(ctx) { return keysMissing(ctx, 'DPNVOS', 'ONVOS', 'Объект не найден в реестре ОНВОС'); } },
 ];
 
 /* III-05: две независимые сверки.
@@ -565,7 +575,7 @@ function zvInfo(P, z) {
 }
 function valsOf(o, P, z) {
   const v = {};
-  for (const d of ['DPNVOS', 'ONVOS', o.T]) {
+  for (const d of ['DPNVOS', 'ONVOS', o.T].filter(Boolean)) {
     const p = P.find(x => x[0] === d);
     if (!p) { v[d] = { t: 'na' }; continue; }
     const e = p[1].get(z);
@@ -686,8 +696,15 @@ function model(ctx) {
     const t3In = o.dv && (T === 'DVOS' || o.dv.cat === cat || (o.on && o.on.cat === cat));
     if (onIn || dpIn || t3In) scope.push(o);
   }
+  /* природопользователи (ИНН), у которых есть действующие в отчётном году объекты I–III категории — по реестру и по ДПНВОС */
+  const innHas13 = new Map();
+  const add13 = (inn, code) => { if (!inn) return; let s13 = innHas13.get(inn); if (!s13) innHas13.set(inn, s13 = new Set()); s13.add(code); };
+  for (const o of objs.values()) {
+    if (o.on && ['I', 'II', 'III'].includes(o.on.cat) && !(o.on.dateIn && o.on.dateIn > y1) && !(o.on.dateOut && o.on.dateOut < y0)) add13(o.inn, o.code);
+    else if (o.dp && ['I', 'II', 'III'].includes(o.dp.cat)) add13(o.inn, o.code);
+  }
   scope.sort((a, b) => a.code.localeCompare(b.code));
-  return ctx._m = { Y, y0, y1, tol, objs, scope, onByCode, T };
+  return ctx._m = { Y, y0, y1, tol, objs, scope, onByCode, T, innHas13 };
 }
 
 /* ---------- помощники шаблонных правил ---------- */
@@ -752,6 +769,7 @@ function runChecks(impact, catId) {
     files: cat.docs.map(d => { const s = slotOf(d, impact); return { doc: d, fileName: s?.fileName || null, rows: ctx.docs[d]?.rows.length ?? 0, demo: !!s?.demo }; }) };
   if (ctx._m) { report.objects = summarizeObjects(ctx._m, findings); report.lines = buildLines(ctx._m, findings); report.T = ctx._m.T; }
   report.valCols = catId === 'III' ? [['DPNVOS', 'ДПНВОС, т'], ['ONVOS', 'ОНВОС AE, т'], ['ONVOS_P', 'ОНВОС AD, г/с'], ['PEK', 'ПЭК X, г/с']]
+                 : catId === 'IV' ? [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т']]
                                    : [['DPNVOS', 'ДПНВОС, т'], ['ONVOS', 'ОНВОС, т'], ['DVOS', 'ДВОС, т']];
   return report;
 }
@@ -763,7 +781,7 @@ function buildLines(M, findings) {
   const badZ = new Map(), objF = new Map();
   for (const x of findings) {
     if (!x.objKey) continue;
-    if (x.zvKey && /^I+-0[45]$/.test(x.ruleId)) {
+    if (x.zvKey) {
       const k = x.objKey + '|' + x.zvKey; (badZ.get(k) || badZ.set(k, []).get(k)).push(x);
     } else (objF.get(x.objKey) || objF.set(x.objKey, []).get(x.objKey)).push(x.kind || x.message);
   }
@@ -792,7 +810,7 @@ function summarizeObjects(M, findings) {
       dpNo: o.dp ? [...o.dp.reports.values()].map(r => r.no).join(', ') : '',
       dvNo: R ? R.no : '', dvDate: R?.date || null, dvUntil: R?.until || null, dvValid: R ? R.valid : 'none',
       zvDp: o.dp ? o.dp.rep.zv.size : null, zvOn: o.on && o.on.hasImpact ? o.on.zv.size : null, zvDv: R ? R.zv.size : null,
-      errors: c.e, warnings: c.w };
+      need13: M.innHas13 ? (M.innHas13.get(o.inn)?.size || 0) : 0, errors: c.e, warnings: c.w };
   });
 }
 
@@ -1320,13 +1338,15 @@ function renderTable() {
     const list = r.objects.filter(o => (!state.filter.onlyBad || o.errors || o.warnings) && (!qq || [o.code, o.inn, o.name, o.dpNo, o.dvNo].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const shown = list.slice(0, 1500);
-    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Объект / ИНН</th><th>Наименование</th><th>Кат. реестра</th><th>Исключён</th><th>ДПНВОС №</th><th>${r.T === 'PEK' ? 'ПЭК №' : 'ДВОС № / дата'}</th><th>${short(r.T || 'DVOS')} в ${r.settings.year}</th><th>ЗВ: ДП / ОН / ${r.T === 'PEK' ? 'ПЭК' : 'ДВ'}</th><th>Ошибок</th><th>Пред.</th><th>Результат</th></tr></thead><tbody>
+    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Объект / ИНН</th><th>Наименование</th><th>Кат. реестра</th><th>Исключён</th><th>ДПНВОС №</th>${r.T ? `<th>${r.T === 'PEK' ? 'ПЭК №' : 'ДВОС № / дата'}</th><th>${short(r.T)} в ${r.settings.year}</th><th>ЗВ: ДП / ОН / ${r.T === 'PEK' ? 'ПЭК' : 'ДВ'}</th>` : '<th>Объекты I–III у ИНН</th><th>ЗВ: ДП / ОН</th>'}<th>Ошибок</th><th>Пред.</th><th>Результат</th></tr></thead><tbody>
       ${shown.map(o => `<tr><td class="obj">${esc(o.code)}<small>${esc(o.inn)}</small></td><td>${esc(o.name)}</td>
         <td class="num">${o.inReg ? esc(o.onCat) : '<span class="pill fail">нет в реестре</span>'}</td><td class="num">${fmtDate(o.dateOut)}</td>
         <td class="num">${o.dpNo ? esc(o.dpNo) : '<span class="pill fail">нет</span>'}</td>
-        <td class="num">${o.dvNo ? `${esc(o.dvNo)}<br><span class="note">${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</span>` : '—'}</td>
+        ${r.T ? `<td class="num">${o.dvNo ? `${esc(o.dvNo)}<br><span class="note">${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</span>` : '—'}</td>
         <td><span class="pill ${VALID[o.dvValid][0]}">${validLabel(o, r)}</span></td>
-        <td class="num">${[o.zvDp, o.zvOn, o.zvDv].map(x => x == null ? '—' : x).join(' / ')}</td>
+        <td class="num">${[o.zvDp, o.zvOn, o.zvDv].map(x => x == null ? '—' : x).join(' / ')}</td>`
+        : `<td>${o.need13 ? `<span class="pill warnp">есть: ${o.need13} — IV обязательна</span>` : '<span class="pill skip">нет</span>'}</td>
+        <td class="num">${[o.zvDp, o.zvOn].map(x => x == null ? '—' : x).join(' / ')}</td>`}
         <td class="num" style="color:${o.errors ? 'var(--err)' : 'inherit'}">${o.errors}</td><td class="num">${o.warnings}</td>
         <td>${o.errors || o.warnings ? '<span class="pill fail">есть замечания</span>' : '<span class="pill ok">прошёл все проверки</span>'}</td></tr>`).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
@@ -1377,7 +1397,10 @@ function buildReportWorkbook(r) {
     ...r.findings.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.objectCode || '', x.inn || '', x.objectName || '', x.zvCode || '', x.zvName || '',
       ...r.valCols.map(c => vText(x.vals?.[c[0]])), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
     [6, 15, 12, 19, 13, 36, 9, 36, ...r.valCols.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
-  if (r.objects) sheet([['Код объекта', 'ИНН', 'Наименование', 'Категория в реестре', 'Дата исключения', 'ДПНВОС №', `${short(r.T || 'DVOS')} №`, 'ДВОС дата подачи', 'ДВОС действует до', `${short(r.T || 'DVOS')} в ${r.settings.year}`, 'ЗВ в ДПНВОС', 'ЗВ в ОНВОС', `ЗВ в ${short(r.T || 'DVOS')}`, 'Ошибок', 'Предупреждений', 'Результат'],
+  if (r.objects && !r.T) sheet([['Код объекта', 'ИНН', 'Наименование', 'Категория в реестре', 'Дата исключения', 'ДПНВОС №', 'Объектов I–III у ИНН', 'ЗВ в ДПНВОС', 'ЗВ в ОНВОС', 'Ошибок', 'Предупреждений', 'Результат'],
+    ...r.objects.map(o => [o.code, o.inn, o.name, o.inReg ? o.onCat : 'нет в реестре', fmtDate(o.dateOut), o.dpNo || 'нет', o.need13, o.zvDp ?? '', o.zvOn ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
+    [19, 13, 40, 12, 14, 14, 14, 10, 10, 9, 12, 22], 'По объектам', true);
+  else if (r.objects) sheet([['Код объекта', 'ИНН', 'Наименование', 'Категория в реестре', 'Дата исключения', 'ДПНВОС №', `${short(r.T || 'DVOS')} №`, 'ДВОС дата подачи', 'ДВОС действует до', `${short(r.T || 'DVOS')} в ${r.settings.year}`, 'ЗВ в ДПНВОС', 'ЗВ в ОНВОС', `ЗВ в ${short(r.T || 'DVOS')}`, 'Ошибок', 'Предупреждений', 'Результат'],
     ...r.objects.map(o => [o.code, o.inn, o.name, o.inReg ? o.onCat : 'нет в реестре', fmtDate(o.dateOut), o.dpNo || 'нет', o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), validLabel(o, r), o.zvDp ?? '', o.zvOn ?? '', o.zvDv ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
     [19, 13, 40, 12, 14, 14, 12, 14, 14, 22, 10, 10, 10, 9, 12, 22], 'По объектам', true);
   if (r.lines) {
@@ -1418,7 +1441,11 @@ function demoData(impact) {
     [C[0], C[2], 2, '22.12.2016', '15.06.2025', C[1], src, '6001', '0301', 'Азота диоксид', 0.3],
     [D[0], D[2], 2, '03.11.2017', '', D[1], src, '0001', '0301', 'Азота диоксид', 0.8], [D[0], D[2], 2, '03.11.2017', '', D[1], src, '0001', '2902', 'Взвешенные вещества', 0.25],
     [E[0], E[2], 3, '24.01.2017', '', E[1], src, '0001', '0337', 'Углерод оксид', 0.1],
-    [G[0], G[2], 2, '28.12.2016', '', G[1], src, '0001', '0301', 'Азота диоксид', 0.05]];
+    [G[0], G[2], 2, '28.12.2016', '', G[1], src, '0001', '0301', 'Азота диоксид', 0.05],
+    ['45-0177-008001-П', 'Гараж', 4, '10.02.2020', '', B[1], src, '0001', '0301', 'Азота диоксид', 0.004],
+    ['45-0277-008002-П', 'Склад', 4, '11.03.2020', '', A[1], src, '0001', '0301', 'Азота диоксид', 0.008],
+    ['45-0277-008002-П', 'Склад', 4, '11.03.2020', '', A[1], src, '0001', '0337', 'Углерод оксид', 0.002],
+    ['45-0177-008003-П', 'Офис', 4, '12.04.2021', '', '7712345678', src, '0001', '0301', 'Азота диоксид', 0.001]];
   const dpH = ['Номер отчёта', 'Отчётный период', 'Статус отчёта', 'ИНН', 'Код объекта НВОС', 'Наименование объекта НВОС', 'Категория объекта НВОС', `Код источника ${g}ов`,
     `Наименование ЗВ (${w ? 'Сбросы' : 'Выбросы'})`, `Код ЗВ (${w ? 'Сбросы' : 'Выбросы'})`, `Фактический ${g} ЗВ, всего(тонн)`, `Фактический ${g} ЗВ, ${w ? 'НДС' : 'НДВ'}, ТН(тонн)`, `Фактический ${g} ЗВ, в пределах ${w ? 'ВРС' : 'ВРВ'}`, `Фактический ${g} сверх`];
   const dp = [dpH,
@@ -1430,7 +1457,8 @@ function demoData(impact) {
     [13500001, 2025, 'Ожидает рассмотрения', B[1], B[0], B[2], 2, '0001', 'Бенз/а/пирен', '0703', 1e-7, 1e-7, 0, 0],
     [13600002, 2025, 'На рассмотрении', '7700000001', G[0], G[2], 2, '0001', 'Азота диоксид', '0301', 0.05, 0.05, 0, 0],
     [13700003, 2025, 'Принято', '7707070707', '45-0177-005555-П', 'Мастерская', 2, '0001', 'Углерод оксид', '0337', 0.07, 0.07, 0, 0],
-    [12000001, 2024, 'Принято', D[1], D[0], D[2], 2, '0001', 'Азота диоксид', '0301', 0.8, 0.8, 0, 0]];
+    [12000001, 2024, 'Принято', D[1], D[0], D[2], 2, '0001', 'Азота диоксид', '0301', 0.8, 0.8, 0, 0],
+    [13484472, 2025, 'Принято', A[1], '45-0277-008002-П', 'Склад', 4, '0001', 'Азота диоксид', '0301', 0.01, 0.01, 0, 0]];
   const dvH = ['Номер отчёта', 'Дата подачи отчёта', 'Отчётный период', 'Статус отчёта', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория по данным Реестра', 'Номер источника', 'Загрязняющее вещество', 'Код загрязняющего вещества', `Масса ${g}ов тонн/год всего`];
   const dv = [dvH,
     [5044465, '18.08.2022', 2021, 'Принято', A[1], A[0], A[2], '2', '6001', 'Азота диоксид', '0301', 0.140382],
