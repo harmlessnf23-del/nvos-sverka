@@ -1430,12 +1430,26 @@ function renderDecl() {
     <div class="note">Сверка в выбранной категории идёт только по объектам этого природопользователя: строки ДПНВОС берутся только из декларации № ${esc(D.no)}${curCat().docs.includes('DVOS') ? ', ДВОС — только по его ИНН' : curCat().docs.includes('PEK') ? ', ПЭК — только по его ИНН' : ''}; объекты из реестра, которых нет в декларации, будут подсвечены.</div>
   </div>`;
 }
+function runNow() {
+  const b = bucket();
+    if (!curCat().docs.some(dd => slotOf(dd)?.records)) { toast('Сначала загрузите хотя бы один документ'); return; }
+    if (SETTINGS.decl) { const D = findDecl(SETTINGS.decl); if (D.error) { toast(D.error); return; } }
+    const btn = $('#btn-run'); btn.disabled = true; btn.textContent = 'Проверяю…';
+    setTimeout(() => {
+      try { b.report = runChecks(state.impact, state.cat); b.stale = false; state.filter = { sev: 'all', rule: 'all', q: '', onlyBad: true, line: 'ok' }; }
+      catch (err) { console.error(err); toast('Проверка прервалась: ' + err.message); }
+      renderRunState(); renderReport();
+      $('#report').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    }, 30);
+  }
 function applyDecl(v) {
   v = String(v || '').trim(); SETTINGS.decl = v; staleAll();
   const D = v ? findDecl(v) : null;
   if (D && !D.error && D.years.length === 1 && D.years[0] !== SETTINGS.year) { SETTINGS.year = D.years[0]; SETTINGS.yearAuto = false; toast(`Отчётный год переключён на ${D.years[0]} — год декларации`); }
   else if (D && D.error) toast(D.error);
   renderParams(); renderDecl(); renderReport();
+  /* найденная декларация — сразу запускаем сверку в текущей категории */
+  if (D && !D.error && !curCat().stub && curCat().docs.some(d => slotOf(d)?.records) && !curCat().docs.some(d => slotOf(d)?.loading)) runNow();
 }
 function renderAll() { renderNav(); renderParams(); renderDecl(); renderSlots(); renderReport(); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 3500); }
@@ -1572,17 +1586,7 @@ document.addEventListener('click', e => {
   else if (act === 'demo') { loadDemo(); renderParams(); renderSlots(); renderReport(); toast('Загружены примеры — замените их своими файлами'); }
   else if (act === 'clear') { for (const dd of curCat().docs) { const s = slotOf(dd); if (s?.worker) s.worker.terminate(); delete state.pool[poolKey(dd)]; touchDoc(dd); } b.report = null; b.stale = false; renderParams(); renderSlots(); renderReport(); renderRunState(); }
   else if (act === 'view') { state.view = el.dataset.id; renderReport(); }
-  else if (act === 'run') {
-    if (!curCat().docs.some(dd => slotOf(dd)?.records)) { toast('Сначала загрузите хотя бы один документ'); return; }
-    if (SETTINGS.decl) { const D = findDecl(SETTINGS.decl); if (D.error) { toast(D.error); return; } }
-    const btn = $('#btn-run'); btn.disabled = true; btn.textContent = 'Проверяю…';
-    setTimeout(() => {
-      try { b.report = runChecks(state.impact, state.cat); b.stale = false; state.filter = { sev: 'all', rule: 'all', q: '', onlyBad: true, line: 'ok' }; }
-      catch (err) { console.error(err); toast('Проверка прервалась: ' + err.message); }
-      renderRunState(); renderReport();
-      $('#report').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-    }, 30);
-  }
+  else if (act === 'run') runNow();
   else if (act === 'export') exportReport();
   else if (act === 'decl-find') applyDecl($('#p-decl').value);
   else if (act === 'decl-clear') applyDecl('');
