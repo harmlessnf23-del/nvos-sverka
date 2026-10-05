@@ -208,6 +208,17 @@ summary:hover{color:var(--fg)}
 @media (max-width:700px){.wrap{padding-inline:16px;padding-block:28px 56px;gap:28px}.hdr-in{padding-inline:16px}.hdr-note{display:none}.intro h1{font-size:30px}.toolbar{padding:12px}.seg,.cats{flex-wrap:wrap}}
 @media (prefers-reduced-motion:no-preference){.btn,.cat,.seg button,.drop,.tabs button{transition:background .15s,border-color .15s,color .15s}}
 .drop{flex:1;justify-content:center}
+.declbar{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding-top:12px;border-top:1px solid var(--line)}
+.declbar input{width:200px}
+.decl-card{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);padding:20px 22px;display:flex;flex-direction:column;gap:14px}
+.decl-card.bad{color:var(--err);background:var(--err-soft);box-shadow:none}
+.decl-h{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-start}
+.decl-h h2{font-size:24px;font-weight:700;letter-spacing:-.02em}
+.decl-cats{display:inline-flex;flex-wrap:wrap;background:var(--surface-2);border-radius:9px;padding:2px;gap:2px}
+.decl-objs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px;max-height:260px;overflow:auto}
+.decl-obj{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:7px 10px;border-radius:10px;background:var(--bg);font-size:13px;opacity:.6}
+.decl-obj.on{opacity:1;background:var(--accent-soft)}
+.decl-obj small{flex-basis:100%;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 
 </head>
@@ -229,7 +240,9 @@ summary:hover{color:var(--fg)}
     <div class="seg" id="impacts" role="group" aria-label="Вид воздействия"></div>
     <div class="cats" id="cats" role="group" aria-label="Категория объекта"></div>
     <div class="params" id="params"></div>
+    <div class="declbar" id="declbar"></div>
   </section>
+  <section id="decl" hidden></section>
   <section>
     <div class="sec-h"><h2>Документы</h2><span>Перетащите выгрузки Excel в карточки — столбцы сопоставятся автоматически</span></div>
     <div id="slots" class="slots"></div>
@@ -263,6 +276,7 @@ const DOC_TYPES = {
     fld('year',      'Отчётный период', ['отчетный период', 'отчетный год'], true),
     fld('status',    'Статус отчёта', ['статус отчета']),
     fld('inn',       'ИНН', ['инн'], true),
+    fld('orgName',   'Наименование организации', ['наименование организации']),
     fld('objectCode','Код объекта НВОС', ['код объекта нвос', 'код объекта', 'код онвос'], true),
     fld('objectName','Наименование объекта', ['наименование объекта нвос', 'наименование объекта']),
     fld('category',  'Категория объекта', ['категория объекта']),
@@ -703,6 +717,7 @@ function model(ctx) {
     if (o.on && ['I', 'II', 'III'].includes(o.on.cat) && !(o.on.dateIn && o.on.dateIn > y1) && !(o.on.dateOut && o.on.dateOut < y0)) add13(o.inn, o.code);
     else if (o.dp && ['I', 'II', 'III'].includes(o.dp.cat)) add13(o.inn, o.code);
   }
+  if (ctx.declInns) for (let i = scope.length - 1; i >= 0; i--) if (!ctx.declInns.has(scope[i].inn)) scope.splice(i, 1);
   scope.sort((a, b) => a.code.localeCompare(b.code));
   return ctx._m = { Y, y0, y1, tol, objs, scope, onByCode, T, innHas13 };
 }
@@ -739,6 +754,14 @@ function runChecks(impact, catId) {
     const rows = (d === 'DPNVOS' || d === 'PEK') && s.map.year != null ? s.records.filter(r => yearOf(r.year) === ctx.settings.year) : s.records;
     ctx.docs[d] = { fileName: s.fileName, map: s.map, rows, total: s.records.length };
   }
+  /* режим одной декларации: из ДПНВОС — только строки отчёта; из ДВОС/ПЭК — только природопользователь(и) декларации;
+     реестр остаётся целиком (нужен для поиска по коду с другим ИНН), но в сверку попадают только объекты этого ИНН */
+  const D = ctx.settings.decl ? findDecl(ctx.settings.decl) : null;
+  if (D && !D.error) {
+    ctx.decl = D; ctx.declInns = D.inns;
+    if (ctx.docs.DPNVOS) ctx.docs.DPNVOS.rows = ctx.docs.DPNVOS.rows.filter(r => norm(r.reportNo) === norm(D.no));
+    for (const d of ['DVOS', 'PEK']) if (ctx.docs[d]) ctx.docs[d].rows = ctx.docs[d].rows.filter(r => D.inns.has(normInn(r.inn)));
+  }
   const results = [], findings = [];
   for (const rule of RULES) {
     if (rule.impacts && !rule.impacts.includes(impact)) continue;
@@ -766,6 +789,7 @@ function runChecks(impact, catId) {
     }
   }
   const report = { at: new Date(), impact, category: catId, settings: ctx.settings, results, findings,
+    decl: ctx.decl ? { no: ctx.decl.no, inns: [...ctx.decl.inns], orgs: ctx.decl.orgs, objs: ctx.decl.objs.length } : null,
     files: cat.docs.map(d => { const s = slotOf(d, impact); return { doc: d, fileName: s?.fileName || null, rows: ctx.docs[d]?.rows.length ?? 0, demo: !!s?.demo }; }) };
   if (ctx._m) { report.objects = summarizeObjects(ctx._m, findings); report.lines = buildLines(ctx._m, findings); report.T = ctx._m.T; }
   report.valCols = catId === 'III' ? [['DPNVOS', 'ДПНВОС, т'], ['ONVOS', 'ОНВОС AE, т'], ['ONVOS_P', 'ОНВОС AD, г/с'], ['PEK', 'ПЭК X, г/с']]
@@ -1106,7 +1130,7 @@ async function loadRows(docId, slot) {
   for (let i = 0; i < n; i++) { const r = { _row: rowNums[i] }; for (let k = 0; k < fields.length; k++) r[fields[k]] = getters[k](i); recs[i] = r; }
   colsData = null;
   slot.records = recs; slot.loading = null;
-  touchDoc(docId); autoYear(); renderParams(); renderSlots(); renderReport(); renderRunState();
+  touchDoc(docId); autoYear(); renderParams(); renderDecl(); renderSlots(); renderReport(); renderRunState();
 }
 async function reHead(docId, slot) {
   if (slot.kind === 'stream') {
@@ -1130,7 +1154,26 @@ function bucket(impact = state.impact, cat = state.cat) {
   return state.buckets[k] || (state.buckets[k] = { report: null, stale: false, settings: SETTINGS });
 }
 /* отчётный год и допуск — общие для всех категорий и видов воздействия */
-const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001 };
+const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001, decl: '' };
+/* поиск декларации по номеру отчёта ДПНВОС: все строки отчёта, ИНН природопользователя, объекты и их категории */
+function findDecl(no) {
+  const s = slotOf('DPNVOS');
+  if (!no) return null;
+  if (!s?.records) return { no, error: 'Загрузите файл ДПНВОС — номер ищется в нём' };
+  if (s.map.reportNo == null) return { no, error: 'В ДПНВОС не сопоставлен столбец «Номер отчёта»' };
+  const key = norm(no), rows = s.records.filter(r => norm(r.reportNo) === key);
+  if (!rows.length) return { no, error: `Декларация № ${no} не найдена в загруженной ДПНВОС` };
+  const inns = new Set(), years = new Set(), statuses = new Set(), orgs = new Set(), objs = new Map();
+  for (const r of rows) {
+    const inn = normInn(r.inn); inns.add(inn);
+    const y = yearOf(r.year); if (y) years.add(y);
+    if (r.status) statuses.add(String(r.status)); if (r.orgName) orgs.add(String(r.orgName).trim());
+    const k = normCode(r.objectCode) + '|' + inn;
+    if (!objs.has(k)) objs.set(k, { code: normCode(r.objectCode), inn, name: r.objectName ? String(r.objectName).trim() : '', cat: catNorm(r.category), zv: new Set() });
+    if (r.zvCode) objs.get(k).zv.add(normZv(r.zvCode));
+  }
+  return { no: String(no).trim(), rows: rows.length, inns, years: [...years].sort(), statuses: [...statuses], orgs: [...orgs], objs: [...objs.values()].sort((a, b) => a.cat.localeCompare(b.cat) || a.code.localeCompare(b.code)) };
+}
 const staleAll = () => { for (const b of Object.values(state.buckets)) if (b.report) b.stale = true; };
 const curCat = () => CATEGORIES.find(c => c.id === state.cat);
 const curImpact = () => IMPACTS.find(i => i.id === state.impact);
@@ -1272,7 +1315,7 @@ function renderReport() {
   $('#report').innerHTML = `<div class="report">
     <div class="rep-h">
       <div><h2>Отчёт о сверке</h2>
-        <div class="note">${IMPACTS.find(i => i.id === r.impact).label} · ${r.category} категория · отчётный год ${r.settings.year} · ${r.at.toLocaleString('ru-RU')}</div></div>
+        <div class="note">${r.decl ? `<b>Декларация № ${esc(r.decl.no)}</b> (ИНН ${esc(r.decl.inns.join(', '))}) · ` : ''}${IMPACTS.find(i => i.id === r.impact).label} · ${r.category} категория · отчётный год ${r.settings.year} · ${r.at.toLocaleString('ru-RU')}</div></div>
       <button class="btn" data-act="export" id="btn-export">Скачать отчёт .xlsx</button>
     </div>
     ${b.stale ? '<div class="stale">Данные или параметры изменились после проверки — запустите её заново.</div>' : ''}
@@ -1367,7 +1410,34 @@ function renderTable() {
       <td class="num">${x.doc ? short(x.doc) : ''}${x.row ? ' : ' + x.row : ''}</td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
 }
-function renderAll() { renderNav(); renderParams(); renderSlots(); renderReport(); }
+function renderDecl() {
+  const v = SETTINGS.decl;
+  $('#declbar').innerHTML = `<label class="pf" for="p-decl">Декларация №
+      <input id="p-decl" type="search" inputmode="numeric" placeholder="номер отчёта ДПНВОС" value="${esc(v)}" autocomplete="off"></label>
+    <button class="btn small" data-act="decl-find">Найти</button>
+    ${v ? '<button class="btn ghost small" data-act="decl-clear">Сбросить — все декларации</button>' : '<span class="note">Без номера сверяются все декларации из файла</span>'}`;
+  const box = $('#decl');
+  if (!v) { box.hidden = true; box.innerHTML = ''; return; }
+  const D = findDecl(v); box.hidden = false;
+  if (D.error) { box.innerHTML = `<div class="decl-card bad">${esc(D.error)}</div>`; return; }
+  const byCat = {}; for (const o of D.objs) (byCat[o.cat || '—'] ||= []).push(o);
+  const cats = ['I', 'II', 'III', 'IV', '—'].filter(c => byCat[c]);
+  box.innerHTML = `<div class="decl-card">
+    <div class="decl-h"><div><div class="crumb">Декларация о плате за НВОС</div><h2>№ ${esc(D.no)}</h2>
+      <div class="note">${esc(D.orgs.join('; ') || 'организация не указана')} · ИНН ${esc([...D.inns].join(', '))} · отчётный период ${esc(D.years.join(', ') || '—')} · ${esc(D.statuses.join(', ') || 'статус не указан')} · строк в декларации: ${D.rows.toLocaleString('ru-RU')}</div></div>
+      <div class="decl-cats">${cats.map(c => `<button class="cat" data-act="cat" data-id="${c === '—' ? state.cat : c}" aria-pressed="${c === state.cat}"><b>${c}</b><small>${c === '—' ? 'без категории' : 'категория'} · ${byCat[c].length}</small></button>`).join('')}</div></div>
+    <div class="decl-objs">${D.objs.map(o => `<div class="decl-obj${o.cat === state.cat ? ' on' : ''}"><span class="mono">${esc(o.code)}</span><span class="pill skip">${esc(o.cat || '—')}</span><small>${esc(o.name || '')} · веществ: ${o.zv.size}</small></div>`).join('')}</div>
+    <div class="note">Сверка в выбранной категории идёт только по объектам этого природопользователя: строки ДПНВОС берутся только из декларации № ${esc(D.no)}${curCat().docs.includes('DVOS') ? ', ДВОС — только по его ИНН' : curCat().docs.includes('PEK') ? ', ПЭК — только по его ИНН' : ''}; объекты из реестра, которых нет в декларации, будут подсвечены.</div>
+  </div>`;
+}
+function applyDecl(v) {
+  v = String(v || '').trim(); SETTINGS.decl = v; staleAll();
+  const D = v ? findDecl(v) : null;
+  if (D && !D.error && D.years.length === 1 && D.years[0] !== SETTINGS.year) { SETTINGS.year = D.years[0]; SETTINGS.yearAuto = false; toast(`Отчётный год переключён на ${D.years[0]} — год декларации`); }
+  else if (D && D.error) toast(D.error);
+  renderParams(); renderDecl(); renderReport();
+}
+function renderAll() { renderNav(); renderParams(); renderDecl(); renderSlots(); renderReport(); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 3500); }
 
 /* =====================================================================
@@ -1383,7 +1453,7 @@ function buildReportWorkbook(r) {
   const wb = XLSX.utils.book_new(), imp = IMPACTS.find(i => i.id === r.impact).label;
   const sheet = (aoa, cols, name, filter) => { const s = XLSX.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; XLSX.utils.book_append_sheet(wb, s, name); };
   sheet([['Отчёт о сверке документов НВОС'], [],
-    ['Вид воздействия', imp], ['Категория объекта', r.category], ['Отчётный год', r.settings.year], ['Допуск по массе, т', r.settings.tol],
+    ['Вид воздействия', imp], ['Категория объекта', r.category], ['Отчётный год', r.settings.year], ...(r.decl ? [['Декларация (номер отчёта ДПНВОС)', r.decl.no], ['ИНН природопользователя', r.decl.inns.join(', ')], ['Организация', r.decl.orgs.join('; ')]] : []), ['Допуск по массе, т', r.settings.tol],
     ['Дата проверки', r.at.toLocaleString('ru-RU')], [],
     ['Документ', 'Файл', 'Строк в сверке'],
     ...r.files.map(x => [short(x.doc) + ' — ' + DOC_TYPES[x.doc].title, x.fileName ? x.fileName + (x.demo ? ' (пример)' : '') : 'не загружен', x.rows]), [],
@@ -1418,9 +1488,9 @@ async function exportReport() {
   toast('Готовлю файл отчёта…'); await new Promise(res => setTimeout(res, 60));
   const buf = XLSX.write(buildReportWorkbook(r), { bookType: 'xlsx', type: 'array', compression: true });
   const d = r.at, p = n => String(n).padStart(2, '0');
-  const name = `Сверка_НВОС_${IMPACTS.find(i => i.id === r.impact).label}_${r.category}_${r.settings.year}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`;
+  const name = `Сверка_НВОС_${IMPACTS.find(i => i.id === r.impact).label}_${r.category}_${r.settings.year}${r.decl ? '_декл' + r.decl.no : ''}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`;
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  if (!downloads) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Sverka_NVOS_${r.impact === 'air' ? 'vybrosy' : 'sbrosy'}_${r.category}_${r.settings.year}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Отчёт скачан'); return; }
+  if (!downloads) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Sverka_NVOS_${r.impact === 'air' ? 'vybrosy' : 'sbrosy'}_${r.category}_${r.settings.year}${r.decl ? '_decl' + r.decl.no : ''}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Отчёт скачан'); return; }
   try { await downloads.save({ filename: name, data: blob }); toast('Отчёт сохранён'); }
   catch (e) { if (e?.code === 'declined') return; toast(e?.code === 'rate_limited' ? 'Окно сохранения уже открыто' : 'Не удалось сохранить файл: ' + (e?.message || e?.code || 'ошибка')); }
 }
@@ -1504,6 +1574,7 @@ document.addEventListener('click', e => {
   else if (act === 'view') { state.view = el.dataset.id; renderReport(); }
   else if (act === 'run') {
     if (!curCat().docs.some(dd => slotOf(dd)?.records)) { toast('Сначала загрузите хотя бы один документ'); return; }
+    if (SETTINGS.decl) { const D = findDecl(SETTINGS.decl); if (D.error) { toast(D.error); return; } }
     const btn = $('#btn-run'); btn.disabled = true; btn.textContent = 'Проверяю…';
     setTimeout(() => {
       try { b.report = runChecks(state.impact, state.cat); b.stale = false; state.filter = { sev: 'all', rule: 'all', q: '', onlyBad: true, line: 'ok' }; }
@@ -1513,6 +1584,8 @@ document.addEventListener('click', e => {
     }, 30);
   }
   else if (act === 'export') exportReport();
+  else if (act === 'decl-find') applyDecl($('#p-decl').value);
+  else if (act === 'decl-clear') applyDecl('');
 });
 
 document.addEventListener('change', async e => {
@@ -1536,6 +1609,7 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('input', e => { if (e.target.id === 'flt-q') { state.filter.q = e.target.value; renderTable(); } });
+document.addEventListener('keydown', e => { if (e.target.id === 'p-decl' && e.key === 'Enter') { e.preventDefault(); applyDecl(e.target.value); } });
 document.addEventListener('toggle', e => {
   const det = e.target; if (!det.dataset?.ui) return;
   const d = det.closest('.slot')?.dataset.doc, s = d && slotOf(d);
