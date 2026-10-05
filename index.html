@@ -207,6 +207,7 @@ summary:hover{color:var(--fg)}
 .note{font-size:12.5px;color:var(--muted)}
 @media (max-width:700px){.wrap{padding-inline:16px;padding-block:28px 56px;gap:28px}.hdr-in{padding-inline:16px}.hdr-note{display:none}.intro h1{font-size:30px}.toolbar{padding:12px}.seg,.cats{flex-wrap:wrap}}
 @media (prefers-reduced-motion:no-preference){.btn,.cat,.seg button,.drop,.tabs button{transition:background .15s,border-color .15s,color .15s}}
+.drop{flex:1;justify-content:center}
 </style>
 
 </head>
@@ -1419,10 +1420,9 @@ slotsEl.addEventListener('drop', e => {
   const fl = e.dataTransfer?.files?.[0]; if (fl) openFile(s.dataset.doc, fl);
 });
 
-/* ---------- старт: открываемся с примером II категории ---------- */
+/* ---------- старт: пустые поля для загрузки ---------- */
 function boot() {
   if (typeof XLSX === 'undefined') { $('#slots').innerHTML = '<div class="stub" style="grid-column:1/-1"><b>Не загрузилась библиотека чтения Excel</b>Обновите страницу.</div>'; return; }
-  if (!curCat().stub) { loadDemo(); bucket().report = runChecks(state.impact, state.cat); bucket().stale = false; }
   renderAll();
 }
 boot();
