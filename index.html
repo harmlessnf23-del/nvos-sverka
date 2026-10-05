@@ -320,6 +320,11 @@ function num(v) {
   return isNaN(n) ? null : n;
 }
 const normInn = v => String(v ?? '').replace(/\D/g, '');
+/* код объекта НВОС: первые два знака могут быть буквами или буквой с цифрой (МЗ-…, 4А-…);
+   латинские буквы-двойники (A, M, P…) приводятся к кириллице, чтобы один объект не распадался на два из-за раскладки */
+const LAT2CYR = { A: 'А', B: 'В', C: 'С', E: 'Е', H: 'Н', K: 'К', M: 'М', O: 'О', P: 'Р', T: 'Т', X: 'Х', Y: 'У' };
+const normCode = v => norm(v).replace(/[ABCEHKMOPTXY]/g, ch => LAT2CYR[ch]).replace(/\s*[-–—]\s*/g, '-');
+const CODE_RE = /^[0-9А-ЯЁ]{2}-\d{4}-\d{6}-[ПТЛ]$/;
 const normZv = v => { const s = String(v ?? '').trim(); if (!s) return ''; return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s.toUpperCase(); };
 function catNorm(v) {
   const s = String(v ?? '').toUpperCase().replace(/[^IV0-9]/g, '');
@@ -361,13 +366,13 @@ const RULES = [
       return ctx.docs[d].rows.filter(r => !norm(r.objectCode)).slice(0, 2000)
         .map(r => ({ doc: d, row: r._row, inn: normInn(r.inn), message: 'Код объекта НВОС пусто' }));
     } },
-  { id: 'T-03', title: 'Формат кода объекта НВОС (XX-XXXX-XXXXXX-П/Т/Л)', severity: 'warning', perDoc: true, fields: ['objectCode'],
+  { id: 'T-03', title: 'Формат кода объекта НВОС (XX-XXXX-XXXXXX-П/Т/Л, XX — цифры или буквы)', severity: 'warning', perDoc: true, fields: ['objectCode'],
     run(ctx, d) {
-      const re = /^\d{2}-\d{4}-\d{6}-[ПТЛ]$/, seen = new Set(), out = [];
+      const seen = new Set(), out = [];
       for (const r of ctx.docs[d].rows) {
-        const c = norm(r.objectCode);
-        if (!c || re.test(c) || seen.has(c)) continue;
-        seen.add(c); out.push({ doc: d, row: r._row, objectCode: c, inn: normInn(r.inn), message: 'Код не соответствует формату XX-XXXX-XXXXXX-П' });
+        const c = normCode(r.objectCode);
+        if (!c || CODE_RE.test(c) || seen.has(c)) continue;
+        seen.add(c); out.push({ doc: d, row: r._row, objectCode: norm(r.objectCode), inn: normInn(r.inn), message: 'Код не соответствует формату XX-XXXX-XXXXXX-П (XX — две цифры, буквы или буква с цифрой)' });
       }
       return out;
     } },
@@ -526,12 +531,12 @@ function modelII(ctx) {
   const Y = ctx.settings.year, tol = ctx.settings.tol;
   const y0 = new Date(Y, 0, 1), y1 = new Date(Y, 11, 31, 23, 59, 59);
   const D = ctx.docs;
-  const keyOf = r => norm(r.objectCode) + '|' + normInn(r.inn);
+  const keyOf = r => normCode(r.objectCode) + '|' + normInn(r.inn);
   const objs = new Map(), onByCode = new Map();
   const get = r => {
     const key = keyOf(r);
     let o = objs.get(key);
-    if (!o) { o = { key, code: norm(r.objectCode), inn: normInn(r.inn), name: '', on: null, dp: null, dv: null, empty: {} }; objs.set(key, o); }
+    if (!o) { o = { key, code: normCode(r.objectCode), inn: normInn(r.inn), name: '', on: null, dp: null, dv: null, empty: {} }; objs.set(key, o); }
     if (!o.name && r.objectName) o.name = String(r.objectName).trim();
     return o;
   };
@@ -549,7 +554,7 @@ function modelII(ctx) {
   if (D.ONVOS) {
     const typed = D.ONVOS.map.sourceType != null;
     for (const r of D.ONVOS.rows) {
-      const code = norm(r.objectCode); if (!code) continue;
+      const code = normCode(r.objectCode); if (!code) continue;
       let s = onByCode.get(code); if (!s) onByCode.set(code, s = new Set()); s.add(normInn(r.inn));
       const o = get(r);
       if (!o.on) o.on = { cat: catNorm(r.category), dateIn: toDate(r.dateIn), dateOut: toDate(r.dateOut), zv: new Map(), hasImpact: false };
@@ -620,17 +625,17 @@ function modelII(ctx) {
 
 /* ---------- помощники шаблонных правил ---------- */
 function keysMissing(ctx, from, to, message) {
-  const have = new Set(ctx.docs[to].rows.map(r => norm(r.objectCode)).filter(Boolean));
+  const have = new Set(ctx.docs[to].rows.map(r => normCode(r.objectCode)).filter(Boolean));
   const seen = new Set(), out = [];
   for (const r of ctx.docs[from].rows) {
-    const k = norm(r.objectCode);
+    const k = normCode(r.objectCode);
     if (!k || have.has(k) || seen.has(k)) continue;
     seen.add(k); out.push({ doc: from, row: r._row, objectCode: k, inn: normInn(r.inn), message });
   }
   return out;
 }
 function compareMassSimple(ctx, a, b, tol) {
-  const agg = d => { const m = new Map(); for (const r of ctx.docs[d].rows) { const obj = norm(r.objectCode); if (!obj) continue; const k = obj + '|' + (normZv(r.zvCode) || norm(r.zvName)); const e = m.get(k) || { sum: 0, row: r._row, code: r.zvCode, name: r.zvName, obj }; e.sum += num(r.mass) || 0; m.set(k, e); } return m; };
+  const agg = d => { const m = new Map(); for (const r of ctx.docs[d].rows) { const obj = normCode(r.objectCode); if (!obj) continue; const k = obj + '|' + (normZv(r.zvCode) || norm(r.zvName)); const e = m.get(k) || { sum: 0, row: r._row, code: r.zvCode, name: r.zvName, obj }; e.sum += num(r.mass) || 0; m.set(k, e); } return m; };
   const A = agg(a), B = agg(b), out = [];
   for (const [k, ea] of A) { const eb = B.get(k);
     if (!eb) out.push({ doc: a, row: ea.row, objectCode: ea.obj, zvCode: ea.code, zvName: ea.name, message: `Вещество отсутствует в ${short(b)}` });
