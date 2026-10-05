@@ -644,7 +644,12 @@ function compareMassSimple(ctx, a, b, tol) {
 function runChecks(impact, catId) {
   const cat = CATEGORIES.find(c => c.id === catId), b = bucket(impact, catId);
   const ctx = { impact, category: catId, settings: { ...b.settings }, docs: {} };
-  for (const d of cat.docs) { const s = slotOf(d, impact); if (s && s.records) ctx.docs[d] = { fileName: s.fileName, map: s.map, rows: s.records }; }
+  for (const d of cat.docs) {
+    const s = slotOf(d, impact); if (!s || !s.records) continue;
+    /* отчётный год: из ДПНВОС в сверку идут только строки выбранного отчётного периода (для всех категорий) */
+    const rows = d === 'DPNVOS' && s.map.year != null ? s.records.filter(r => yearOf(r.year) === ctx.settings.year) : s.records;
+    ctx.docs[d] = { fileName: s.fileName, map: s.map, rows, total: s.records.length };
+  }
   const results = [], findings = [];
   for (const rule of RULES) {
     if (rule.impacts && !rule.impacts.includes(impact)) continue;
@@ -670,7 +675,7 @@ function runChecks(impact, catId) {
     }
   }
   const report = { at: new Date(), impact, category: catId, settings: ctx.settings, results, findings,
-    files: cat.docs.map(d => { const s = slotOf(d, impact); return { doc: d, fileName: s?.fileName || null, rows: s?.records?.length || 0, demo: !!s?.demo }; }) };
+    files: cat.docs.map(d => { const s = slotOf(d, impact); return { doc: d, fileName: s?.fileName || null, rows: ctx.docs[d]?.rows.length ?? 0, demo: !!s?.demo }; }) };
   if (ctx._m) { report.objects = summarizeObjects(ctx._m, findings); report.lines = buildLines(ctx._m, findings); }
   return report;
 }
@@ -1014,8 +1019,11 @@ const poolKey = (d, impact = state.impact) => d === 'ONVOS' ? 'ONVOS' : impact +
 const slotOf = (d, impact = state.impact) => state.pool[poolKey(d, impact)];
 function bucket(impact = state.impact, cat = state.cat) {
   const k = impact + '/' + cat;
-  return state.buckets[k] || (state.buckets[k] = { report: null, stale: false, settings: { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001 } });
+  return state.buckets[k] || (state.buckets[k] = { report: null, stale: false, settings: SETTINGS });
 }
+/* отчётный год и допуск — общие для всех категорий и видов воздействия */
+const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001 };
+const staleAll = () => { for (const b of Object.values(state.buckets)) if (b.report) b.stale = true; };
 const curCat = () => CATEGORIES.find(c => c.id === state.cat);
 const curImpact = () => IMPACTS.find(i => i.id === state.impact);
 function touchDoc(d) {
@@ -1064,7 +1072,6 @@ function renderRunState() {
 }
 function renderParams() {
   const cat = curCat();
-  if (!cat.params) { $('#params').innerHTML = ''; return; }
   const st = bucket().settings, ys = yearsAvailable(), now = new Date().getFullYear();
   for (let y = now - 7; y <= now; y++) ys.add(y); ys.add(st.year);
   const list = [...ys].sort((a, b) => b - a);
@@ -1156,7 +1163,7 @@ function renderReport() {
   $('#report').innerHTML = `<div class="report">
     <div class="rep-h">
       <div><h2>Отчёт о сверке</h2>
-        <div class="note">${IMPACTS.find(i => i.id === r.impact).label} · ${r.category} категория${r.category === 'II' ? ` · отчётный год ${r.settings.year}` : ''} · ${r.at.toLocaleString('ru-RU')}</div></div>
+        <div class="note">${IMPACTS.find(i => i.id === r.impact).label} · ${r.category} категория · отчётный год ${r.settings.year} · ${r.at.toLocaleString('ru-RU')}</div></div>
       <button class="btn" data-act="export" id="btn-export">Скачать отчёт .xlsx</button>
     </div>
     ${b.stale ? '<div class="stale">Данные или параметры изменились после проверки — запустите её заново.</div>' : ''}
@@ -1265,9 +1272,9 @@ function buildReportWorkbook(r) {
   const wb = XLSX.utils.book_new(), imp = IMPACTS.find(i => i.id === r.impact).label;
   const sheet = (aoa, cols, name, filter) => { const s = XLSX.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; XLSX.utils.book_append_sheet(wb, s, name); };
   sheet([['Отчёт о сверке документов НВОС'], [],
-    ['Вид воздействия', imp], ['Категория объекта', r.category], ...(r.category === 'II' ? [['Отчётный год', r.settings.year], ['Допуск по массе, т', r.settings.tol]] : []),
+    ['Вид воздействия', imp], ['Категория объекта', r.category], ['Отчётный год', r.settings.year], ['Допуск по массе, т', r.settings.tol],
     ['Дата проверки', r.at.toLocaleString('ru-RU')], [],
-    ['Документ', 'Файл', 'Строк данных'],
+    ['Документ', 'Файл', 'Строк в сверке'],
     ...r.files.map(x => [short(x.doc) + ' — ' + DOC_TYPES[x.doc].title, x.fileName ? x.fileName + (x.demo ? ' (пример)' : '') : 'не загружен', x.rows]), [],
     ['Ошибок', r.findings.filter(x => x.severity === 'error').length], ['Предупреждений', r.findings.filter(x => x.severity === 'warning').length],
     ...(r.objects ? [['Объектов в проверке', r.objects.length], ['Объектов с замечаниями', r.objects.filter(o => o.errors || o.warnings).length], ['Объектов прошли все проверки', r.objects.filter(o => !o.errors && !o.warnings).length]] : []),
@@ -1296,9 +1303,9 @@ async function exportReport() {
   const r = bucket().report; if (!r || (!downloads && inClaude)) return;
   const buf = XLSX.write(buildReportWorkbook(r), { bookType: 'xlsx', type: 'array', compression: true });
   const d = r.at, p = n => String(n).padStart(2, '0');
-  const name = `Сверка_НВОС_${IMPACTS.find(i => i.id === r.impact).label}_${r.category}${r.category === 'II' ? '_' + r.settings.year : ''}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`;
+  const name = `Сверка_НВОС_${IMPACTS.find(i => i.id === r.impact).label}_${r.category}_${r.settings.year}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`;
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  if (!downloads) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Sverka_NVOS_${r.impact === 'air' ? 'vybrosy' : 'sbrosy'}_${r.category}${r.category === 'II' ? '_' + r.settings.year : ''}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Отчёт скачан'); return; }
+  if (!downloads) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Sverka_NVOS_${r.impact === 'air' ? 'vybrosy' : 'sbrosy'}_${r.category}_${r.settings.year}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Отчёт скачан'); return; }
   try { await downloads.save({ filename: name, data: blob }); toast('Отчёт сохранён'); }
   catch (e) { if (e?.code === 'declined') return; toast(e?.code === 'rate_limited' ? 'Окно сохранения уже открыто' : 'Не удалось сохранить файл: ' + (e?.message || e?.code || 'ошибка')); }
 }
@@ -1391,8 +1398,8 @@ document.addEventListener('change', async e => {
   if (el.id === 'flt-rule') { state.filter.rule = el.value; renderTable(); return; }
   if (el.id === 'flt-bad') { state.filter.onlyBad = el.checked; renderTable(); return; }
   if (el.id === 'flt-line') { state.filter.line = el.value; renderTable(); return; }
-  if (el.id === 'p-year') { const b = bucket(); b.settings.year = +el.value; b.settings.yearAuto = false; if (b.report) b.stale = true; renderParams(); renderReport(); return; }
-  if (el.id === 'p-tol') { const v = num(el.value); const b = bucket(); if (v == null || v < 0) { toast('Допуск — неотрицательное число, например 0,000001'); el.value = b.settings.tol; return; } b.settings.tol = v; if (b.report) b.stale = true; renderReport(); return; }
+  if (el.id === 'p-year') { const b = bucket(); b.settings.year = +el.value; b.settings.yearAuto = false; staleAll(); renderParams(); renderReport(); return; }
+  if (el.id === 'p-tol') { const v = num(el.value); const b = bucket(); if (v == null || v < 0) { toast('Допуск — неотрицательное число, например 0,000001'); el.value = b.settings.tol; return; } b.settings.tol = v; staleAll(); renderReport(); return; }
   if (!act) return;
   if (act === 'file' && el.files?.[0]) { openFile(d, el.files[0]); return; }
   const s = slotOf(d); if (!s || s.loading) return;
