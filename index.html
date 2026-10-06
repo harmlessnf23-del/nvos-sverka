@@ -246,6 +246,12 @@ summary:hover{color:var(--fg)}
 .catbox i{font-style:normal;font-weight:600}
 .catbox i.e{color:var(--err,#D70015)} .catbox i.w{color:var(--warn,#B25000)}
 /* кнопка в строке таблицы: маленькая, залитая синим, в одну строку */
+.cpy{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;padding:1px 7px;margin-left:-7px;border-radius:6px;user-select:text}
+.cpy svg{color:var(--faint)}
+.cpy:hover{background:var(--accent-soft);color:var(--accent)} .cpy:hover svg{color:var(--accent)}
+.cpy:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.cpy.done,.cpy.done svg{color:var(--ok)}
+.decl-h .cpy{margin-left:0}
 .yn{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;font-size:14px;font-weight:800;line-height:1}
 .yn.y{background:var(--ok-soft);color:var(--ok)} .yn.n{background:var(--err-soft);color:var(--err)}
 .ftbl td.act{width:1%;white-space:nowrap;text-align:right;padding-left:8px}
@@ -1241,6 +1247,17 @@ function valCell(v) {
   return `<td class="v">${fmtNum(v.n)}</td>`;
 }
 const CATS = ['I', 'II', 'III', 'IV', '—'];
+/* ИНН с кнопкой копирования: клик копирует ИНН в буфер обмена и не открывает строку */
+const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
+const innBtns = inns => inns.filter(Boolean).map(i => `<button type="button" class="cpy" data-act="copy" data-v="${esc(i)}" title="Скопировать ИНН">ИНН ${esc(i)}${COPY_ICON}</button>`).join(' ') || '<span class="note">ИНН не указан</span>';
+async function copyText(v) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(v); ok = true; } catch (e) {
+    try { const t = document.createElement('textarea'); t.value = v; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); ok = document.execCommand('copy'); t.remove(); } catch (e2) { ok = false; }
+  }
+  toast(ok ? `ИНН ${v} скопирован` : 'Не удалось скопировать — выделите ИНН вручную');
+  return ok;
+}
 /* дата актуализации объекта в реестре (столбец G): после отчётного года — оранжевым, в отчётном году — синим */
 function updState(d, Y) { if (!d) return null; const y = d.getFullYear(); return y > Y ? 'after' : y === Y ? 'in' : 'before'; }
 function updCell(d, Y) {
@@ -1284,7 +1301,7 @@ function renderReport() {
     <div class="decl-card">
       <div class="decl-h"><div><div class="crumb">${D ? 'Декларация о плате за НВОС' : 'Объекты природопользователей без декларации'}</div>
         <h2>${D ? '№ ' + esc(D.no) : 'Без декларации'}</h2>
-        <div class="note">${D ? `${esc(D.orgs.join('; ') || 'организация не указана')} · ИНН ${esc(D.inns.join(', '))} · отчётный период ${esc(D.years.join(', ') || '—')} · ${esc(D.statuses.join(', ') || 'статус не указан')} · объектов в декларации: ${D.declared}, всего в сверке: ${objs.length}` : `Действующие объекты реестра, ДВОС и ПЭК, ИНН которых нет ни в одной декларации за ${R.settings.year} — ${objs.length}`}</div></div>
+        <div class="note">${D ? `${esc(D.orgs.join('; ') || 'организация не указана')} · ${innBtns(D.inns)} · отчётный период ${esc(D.years.join(', ') || '—')} · ${esc(D.statuses.join(', ') || 'статус не указан')} · объектов в декларации: ${D.declared}, всего в сверке: ${objs.length}` : `Действующие объекты реестра, ДВОС и ПЭК, ИНН которых нет ни в одной декларации за ${R.settings.year} — ${objs.length}`}</div></div>
         <button class="btn" data-act="export" id="btn-export">Скачать отчёт .xlsx</button></div>
       <div class="catgrid">
         <button class="catbox ${state.cat === 'all' ? 'on' : ''}" data-act="vcat" data-id="all"><b>Все</b><span>${objs.length} объектов</span><em><i class="e">${objs.reduce((a, o) => a + o.errors, 0)} ош.</i> · <i class="w">${objs.reduce((a, o) => a + o.warnings, 0)} пред.</i></em></button>
@@ -1332,10 +1349,10 @@ function renderDeclList(R, stale) {
     <div class="filters"><input id="flt-list" type="search" placeholder="Номер декларации, ИНН или организация" value="${esc(state.listQ)}">
       ${noDecl.length ? `<button class="btn small" data-act="open-decl" data-id="__none__">Объекты без декларации · ${noDecl.length.toLocaleString('ru-RU')}</button>` : ''}</div>
     ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>ПЭК</th><th></th></tr></thead><tbody>
-      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">ИНН ${esc(d.inns.join(', '))}</span></td>
+      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td>
         ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td>${ynCell(d.pek)}</td><td class="act"><span class="rowbtn">По веществам</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>` : `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Ошибок</th><th>Пред.</th><th></th></tr></thead><tbody>
-      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">${esc(d.inns.join(', '))}</span></td><td class="note">${esc(d.statuses.join(', '))}</td>
+      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td><td class="note">${esc(d.statuses.join(', '))}</td>
         ${CATS.slice(0, 4).map(c => `<td class="num">${d.cats[c] ? `${d.cats[c].n}${d.cats[c].e ? ` <span class="pill fail">${d.cats[c].e}</span>` : ''}` : '<span class="note">—</span>'}</td>`).join('')}
         <td class="num" style="color:${d.errors ? 'var(--err)' : 'inherit'}">${d.errors}</td><td class="num">${d.warnings}</td><td class="act"><span class="rowbtn">Открыть</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>`}
@@ -1558,6 +1575,7 @@ function loadDemo() {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const act = el.dataset.act, d = el.dataset.doc;
+  if (act === 'copy') { e.stopPropagation(); copyText(el.dataset.v).then(ok => { if (ok) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); } }); return; }
   if (act === 'remove') { const s = slotOf(d); if (s?.worker) s.worker.terminate(); delete state.pool[d]; touchDoc(); renderParams(); renderSlots(); renderReport(); renderRunState(); }
   else if (act === 'demo') { loadDemo(); renderParams(); renderSlots(); renderReport(); toast('Загружены примеры — замените их своими файлами'); }
   else if (act === 'clear') { for (const dd of DOCS) { const s = slotOf(dd); if (s?.worker) s.worker.terminate(); delete state.pool[dd]; } state.result = null; state.stale = false; SETTINGS.decl = ''; renderAll(); }
