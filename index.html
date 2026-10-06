@@ -230,6 +230,9 @@ summary:hover{color:var(--fg)}
 .catbox i.e{color:var(--err,#D70015)} .catbox i.w{color:var(--warn,#B25000)}
 tr.rowlink{cursor:pointer} tr.rowlink:hover td{background:rgba(0,113,227,.05)}
 .pill.upd{background:var(--accent-soft);color:var(--accent)}
+.hz{display:inline-block;font-family:var(--f-ui);font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--skip-soft);color:var(--muted);vertical-align:1px;white-space:nowrap}
+.ftbl td.zv{min-width:118px}
+.hz.hz1{background:var(--err-soft);color:var(--err)} .hz.hz2{background:var(--warn-soft);color:var(--warn)}
 .ftbl tr.sub td{background:#FAFAFC;padding-top:7px;padding-bottom:7px;font-size:12.5px}
 .ftbl tr.sub td.obj{font-weight:400;padding-left:28px}
 .ftbl tr.grp td{background:var(--surface-2);font-weight:600;font-size:12.5px;padding-top:8px;padding-bottom:8px}
@@ -332,6 +335,7 @@ const DOC_TYPES = {
     fld('zvName',    'Загрязняющее вещество', ['загрязняющее вещество', 'наименование зв', 'наименование вещества']),
     fld('mass',      'Масса, т/год всего', ['масса выбросов тонн/год всего', 'масса сбросов тонн/год всего', 'тонн/год всего', 'всего'], true),
     fld('sourceNo',  'Номер источника (P)', ['номер источника'], false, 15),
+    fld('hazard',    'Класс опасности (U)', ['класс опасности'], false, 20),
   ] },
   PEK: { short: 'ПЭК', title: 'Отчёт о производственном экологическом контроле', fields: [
     fld('reportNo',  'Номер отчёта', ['номер отчета']),
@@ -369,6 +373,12 @@ const CODE_RE = /^[0-9А-ЯЁ]{2}-\d{4}-\d{6}-[ПТЛ]$/;
 /* номер источника: регистр, пробелы, ведущие нули (0001 ↔ 1), латиница-двойники → кириллица */
 const normSrc = v => { const s = norm(v).replace(/[ABCEHKMOPTXY]/g, ch => LAT2CYR[ch]).replace(/\s+/g, ''); if (!s || s === '-' || s === '--') return ''; return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s; };
 const srcCmp = (a, b) => a.localeCompare(b, 'ru', { numeric: true });
+/* класс опасности: «1», «1 класс», «I» → «1» */
+const hazNorm = v => { const s = String(v ?? '').trim().toUpperCase(); if (!s || s === '-' || s === '--') return ''; const d = s.match(/[1-4]/); if (d) return d[0]; const r = s.match(/\b(IV|III|II|I)\b/); return r ? ({ I: '1', II: '2', III: '3', IV: '4' })[r[1]] : s; };
+let HAZ = {};
+const hazOf = z => (z && HAZ[z]) || '';
+/* бейдж класса опасности рядом с кодом вещества */
+const hazTag = z => { const h = hazOf(z); return h ? ` <span class="hz hz${h.length === 1 ? h : ''}" title="Класс опасности (по ДВОС)">${esc(h)} кл.</span>` : ''; };
 const normZv = v => { const s = String(v ?? '').trim(); if (!s) return ''; return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s.toUpperCase(); };
 function catNorm(v) {
   const s = String(v ?? '').toUpperCase().replace(/[^IV0-9]/g, '');
@@ -882,7 +892,15 @@ function analyze(S) {
     return { no: d.no, inns: [...d.inns], orgs: [...d.orgs], statuses: [...d.statuses], years: [...d.years].sort(), declared: d.declared.size, objects: list.length,
       cats, errors: list.reduce((a, x) => a + x.errors, 0), warnings: list.reduce((a, x) => a + x.warnings, 0) };
   }).sort((a, b) => (num(a.no) || 0) - (num(b.no) || 0));
-  return { at: new Date(), settings: { ...S, decl: undefined }, findings, lines, objects, decls,
+  /* класс опасности вещества — из ДВОС (столбец U), по всем строкам файла, а не только по объекту */
+  const hz = new Map(), dvAll = slotOf('DVOS');
+  if (dvAll?.records && dvAll.map.hazard != null) for (const r of dvAll.records) {
+    const z = normZv(r.zvCode), h = hazNorm(r.hazard); if (!z || !h) continue;
+    let st = hz.get(z); if (!st) hz.set(z, st = new Set()); st.add(h);
+  }
+  const hazard = {}; for (const [z, st] of hz) hazard[z] = [...st].sort().join(', ');
+  HAZ = hazard;
+  return { at: new Date(), settings: { ...S, decl: undefined }, findings, lines, objects, decls, hazard,
     files: DOCS.map(d => ({ doc: d, fileName: D[d]?.fileName || null, rows: D[d]?.rows.length || 0, demo: !!D[d]?.demo })) };
 }
 
@@ -1317,7 +1335,7 @@ function renderTable() {
   }
   if (state.view === 'lines') {
     const fl = state.filter.line;
-    const list = W.lines.filter(l => (fl === 'all' || l.status === fl) && (!qq || [l.code, l.inn, l.name, l.zvCode, l.zvName, l.note, ...(l.srcs || []).map(x => x.src)].join(' ').toLowerCase().includes(qq)));
+    const list = W.lines.filter(l => (fl === 'all' || l.status === fl) && (!qq || [l.code, l.inn, l.name, l.zvCode, l.zvName, l.note, hazOf(l.zvKey) && hazOf(l.zvKey) + ' кл', ...(l.srcs || []).map(x => x.src)].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const head = `<thead><tr><th>Результат</th><th>Кат.</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>Комментарий</th></tr></thead>`;
     const pill = st => `<span class="pill ${LINE[st][0]}">${LINE_PILL[st]}</span>`;
@@ -1335,7 +1353,7 @@ function renderTable() {
         if (g !== prev) { prev = g; const n = rows.filter(x => x.l.objKey === r.l.objKey && x.sk === r.sk).length;
           html += `<tr class="grp"><td colspan="${5 + VCOLS.length}">${esc(r.l.code)} · ${r.sk ? 'источник ' + esc(r.src) : 'без номера источника'}<small>${esc(r.l.name)} · веществ: ${n}</small></td></tr>`; }
         html += `<tr><td>${pill(r.status)}</td><td>${catCell(r.l.cat)}</td><td class="obj">${r.sk ? 'ист. ' + esc(r.src) : '—'}<small>${esc(r.l.code)}</small></td>
-          <td class="zv"><span class="mono">${esc(r.l.zvCode)}</span><small>${esc(r.l.zvName)}</small></td>${VCOLS.map(c => valCell(r.vals[c[0]])).join('')}<td class="note">${esc(r.note || '')}</td></tr>`;
+          <td class="zv"><span class="mono">${esc(r.l.zvCode)}</span>${hazTag(r.l.zvKey)}<small>${esc(r.l.zvName)}</small></td>${VCOLS.map(c => valCell(r.vals[c[0]])).join('')}<td class="note">${esc(r.note || '')}</td></tr>`;
       }
       $('#findings').innerHTML = `<table class="ftbl">${head}<tbody>${html}</tbody></table>${rows.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${rows.length.toLocaleString('ru-RU')}. Полный список — в выгрузке .xlsx (лист «По источникам»).</div>` : ''}`;
       return;
@@ -1345,9 +1363,9 @@ function renderTable() {
       ${shown.map(l => { const id = l.objKey + '|' + l.zvKey, open = l.srcs && state.openLines.has(id);
         return `<tr${l.srcs ? ` class="rowlink${open ? ' open' : ''}" data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}</td><td>${catCell(l.cat)}</td>
         <td class="obj">${esc(l.code)}<small>${esc(l.name)}</small></td>
-        <td class="zv"><span class="mono">${esc(l.zvCode)}</span><small>${esc(l.zvName)}</small>${l.srcs ? `<span class="srcn">источников: ${l.srcs.length}</span>` : ''}</td>
+        <td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}<small>${esc(l.zvName)}</small>${l.srcs ? `<span class="srcn">источников: ${l.srcs.length}</span>` : ''}</td>
         ${VCOLS.map(c => valCell(l.vals[c[0]])).join('')}<td class="note">${esc(l.note)}</td></tr>` +
-        (open ? l.srcs.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td></td><td class="obj">источник ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span></td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
+        (open ? l.srcs.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td></td><td class="obj">источник ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length.toLocaleString('ru-RU')}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
     return;
   }
@@ -1358,7 +1376,7 @@ function renderTable() {
   $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Уровень</th><th>Проверка</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>Описание</th><th>Строка</th></tr></thead><tbody>
     ${shown.map(x => `<tr class="${x.severity}"><td class="sev">${SEV[x.severity]}</td><td class="num" title="${esc(CHECKS[x.check])}">${esc(x.ruleId)}</td>
       <td class="obj">${esc(x.objectCode || '')}<small>${esc(x.objectName || x.inn || '')}</small></td>
-      <td class="zv"><span class="mono">${esc(x.zvCode || '')}</span><small>${esc(x.zvName || '')}</small></td>
+      <td class="zv"><span class="mono">${esc(x.zvCode || '')}</span>${hazTag(x.zvKey)}<small>${esc(x.zvName || '')}</small></td>
       ${x.vals ? VCOLS.map(c => valCell(x.vals[c[0]])).join('') : VCOLS.map(() => '<td></td>').join('')}
       <td>${x.kind ? `<span class="kind ${x.kindCls || ''}">${esc(x.kind)}</span><br>` : ''}${esc(x.message)}</td>
       <td class="num">${x.doc ? short(x.doc) : ''}${x.row ? ' : ' + x.row : ''}</td></tr>`).join('')}
@@ -1398,7 +1416,7 @@ let downloads = null;
 (async () => { try { downloads = window.claude?.use ? await window.claude.use('downloads') : null; } catch (e) { downloads = null; } updateExportBtn(); })();
 const inClaude = !!window.claude?.use;
 function updateExportBtn() { const b = $('#btn-export'); if (!b) return; const ok = downloads || !inClaude; b.disabled = !ok; b.title = ok ? '' : 'Скачивание недоступно в этом окне просмотра'; }
-const vText = v => !v || v.t === 'na' ? '' : v.t === 'miss' ? 'нет' : v.t === 'empty' ? 'пусто' : v.n;
+const vText = v => !v || v.t === 'na' ? '' : v.t === 'miss' ? 'нет' : v.t === 'empty' ? 'пусто' : +Number(v.n).toPrecision(12);
 function buildReportWorkbook(R, V) {
   const wb = XLSX.utils.book_new();
   const sheet = (aoa, cols, name, filter) => { const s = XLSX.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; XLSX.utils.book_append_sheet(wb, s, name); };
@@ -1418,20 +1436,20 @@ function buildReportWorkbook(R, V) {
   sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование', 'Декларации', 'В реестре', 'Дата исключения', 'Дата актуализации', 'Актуализация', 'ДПНВОС №', 'ДВОС / ПЭК / IV', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', 'ПЭК №', 'ЗВ ДПНВОС', 'ЗВ ОНВОС', 'ЗВ ДВОС', 'ЗВ ПЭК', 'Ошибок', 'Предупреждений', 'Результат'],
     ...objs.map(o => [o.cat, o.code, o.inn, o.name, o.decls.join(', '), o.inReg ? 'да' : 'нет', fmtDate(o.dateOut), fmtDate(o.dateUpd), UPD_TXT[updState(o.dateUpd, R.settings.year)] || '', o.dpNo || 'нет', o.third[1], o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), o.pkNo, o.zv.DPNVOS ?? '', o.zv.ONVOS ?? '', o.zv.DVOS ?? '', o.zv.PEK ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
     [8, 19, 13, 40, 14, 9, 14, 14, 20, 12, 18, 12, 14, 14, 12, 9, 9, 9, 9, 9, 12, 20], 'Объекты', true);
-  sheet([['№', 'Уровень', 'Проверка', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Тип', 'Описание', 'Документ', 'Строка в файле'],
-    ...fnd.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.cat, x.objectCode || '', x.inn || '', x.objectName || '', x.zvCode || '', x.zvName || '', ...VCOLS.map(c => vText(x.vals?.[c[0]])), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
-    [6, 15, 9, 8, 19, 13, 36, 9, 36, ...VCOLS.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
+  sheet([['№', 'Уровень', 'Проверка', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Тип', 'Описание', 'Документ', 'Строка в файле'],
+    ...fnd.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.cat, x.objectCode || '', x.inn || '', x.objectName || '', x.zvCode || '', hazOf(x.zvKey), x.zvName || '', ...VCOLS.map(c => vText(x.vals?.[c[0]])), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
+    [6, 15, 9, 8, 19, 13, 36, 9, 10, 36, ...VCOLS.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
   const rowsTxt = l => DOCS.filter(d => l.rows[d]).map(d => `${short(d)}: ${l.rows[d].slice(0, 10).join(', ')}${l.rows[d].length > 10 ? '…' : ''}`).join('; ');
-  const head = ['Результат', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Комментарий', 'Строки в файлах'];
-  const toRow = l => [LINE[l.status][1], l.cat, l.code, l.inn, l.name, l.zvCode, l.zvName, ...VCOLS.map(c => vText(l.vals[c[0]])), l.note, rowsTxt(l)];
-  const w = [26, 8, 19, 13, 36, 9, 40, ...VCOLS.map(() => 13), 50, 40];
+  const head = ['Результат', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Комментарий', 'Строки в файлах'];
+  const toRow = l => [LINE[l.status][1], l.cat, l.code, l.inn, l.name, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.map(c => vText(l.vals[c[0]])), l.note, rowsTxt(l)];
+  const w = [26, 8, 19, 13, 36, 9, 10, 40, ...VCOLS.map(() => 13), 50, 40];
   sheet([head, ...lines.filter(l => l.status === 'ok').map(toRow)], w, 'Прошли проверки', true);
   sheet([head, ...lines.map(toRow)], w, 'Сверка по веществам', true);
   const srcAoa = [];
-  for (const l of lines) if (l.srcs) for (const x of l.srcs) srcAoa.push([l.cat, l.code, l.inn, l.name, x.src, l.zvCode, l.zvName, ...VCOLS.slice(1).map(c => vText(x.vals[c[0]])), LINE[x.status][1]]);
+  for (const l of lines) if (l.srcs) for (const x of l.srcs) srcAoa.push([l.cat, l.code, l.inn, l.name, x.src, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.slice(1).map(c => vText(x.vals[c[0]])), LINE[x.status][1]]);
   srcAoa.sort((a, b) => String(a[1]).localeCompare(String(b[1])) || srcCmp(String(a[4]), String(b[4])) || String(a[5]).localeCompare(String(b[5])));
-  sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Источник', 'Код ЗВ', 'Наименование ЗВ', ...VCOLS.slice(1).map(c => c[1]), 'Результат по источнику'], ...srcAoa],
-    [8, 19, 13, 36, 12, 9, 40, ...VCOLS.slice(1).map(() => 13), 26], 'По источникам', true);
+  sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Источник', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.slice(1).map(c => c[1]), 'Результат по источнику'], ...srcAoa],
+    [8, 19, 13, 36, 12, 9, 10, 40, ...VCOLS.slice(1).map(() => 13), 26], 'По источникам', true);
   return wb;
 }
 async function exportReport() {
@@ -1470,10 +1488,10 @@ function demoData() {
     [13500001, 2025, 'Ожидает рассмотрения', B[1], 'АО «Котельные»', B[0], B[2], 2, 'Азота диоксид', '0301', 1.5, 1.35, 0.15], [13500001, 2025, 'Ожидает рассмотрения', B[1], 'АО «Котельные»', B[0], B[2], 2, 'Сера диоксид', '0330', 0.5, 0.5, 0],
     [13500001, 2025, 'Ожидает рассмотрения', B[1], 'АО «Котельные»', B[0], B[2], 2, 'Взвешенные вещества', '00010', 0.02, 0.02, 0],
     [13500001, 2025, 'Ожидает рассмотрения', B[1], 'АО «Котельные»', E[0], E[2], 3, 'Углерод оксид', '0337', 0.1, 0.1, 0]];
-  const dv = [['Номер отчёта', 'Дата подачи отчёта', 'Отчётный период', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория по данным Реестра', 'Загрязняющее вещество', 'Код загрязняющего вещества', 'Масса выбросов тонн/год всего', 'Номер источника'],
-    [5044465, '18.08.2022', 2021, A[1], A[0], A[2], '2', 'Азота диоксид', '0301', 0.140382, '6001'], [5044465, '18.08.2022', 2021, A[1], A[0], A[2], '2', 'Углерод оксид', '0337', 0.549213, '6001'],
-    [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Азота диоксид', '0301', 0.8, '0001'], [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Азота диоксид', '0301', 0.4, '0002'],
-    [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Сера диоксид', '0330', 0.48, '0001']];
+  const dv = [['Номер отчёта', 'Дата подачи отчёта', 'Отчётный период', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория по данным Реестра', 'Загрязняющее вещество', 'Код загрязняющего вещества', 'Масса выбросов тонн/год всего', 'Номер источника', 'Класс опасности'],
+    [5044465, '18.08.2022', 2021, A[1], A[0], A[2], '2', 'Азота диоксид', '0301', 0.140382, '6001', 3], [5044465, '18.08.2022', 2021, A[1], A[0], A[2], '2', 'Углерод оксид', '0337', 0.549213, '6001', 4],
+    [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Азота диоксид', '0301', 0.8, '0001', 3], [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Азота диоксид', '0301', 0.4, '0002', 3],
+    [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Сера диоксид', '0330', 0.48, '0001', 3]];
   const pek = [['Номер отчёта', 'Год отчёта', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория объекта', 'Код Загрязняющего вещества из 2.1', 'Загрязняющее вещество из 2.1', 'Фактический выброс', 'Номер источника'],
     [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0035', '0001'], [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0015', '0002'],
     [7400001, 2025, E[1], E[0], E[2], 3, '0301', 'Азота диоксид', '0.001', '0001']];
