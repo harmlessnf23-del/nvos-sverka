@@ -246,6 +246,8 @@ summary:hover{color:var(--fg)}
 .catbox i{font-style:normal;font-weight:600}
 .catbox i.e{color:var(--err,#D70015)} .catbox i.w{color:var(--warn,#B25000)}
 /* кнопка в строке таблицы: маленькая, залитая синим, в одну строку */
+.yn{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;font-size:14px;font-weight:800;line-height:1}
+.yn.y{background:var(--ok-soft);color:var(--ok)} .yn.n{background:var(--err-soft);color:var(--err)}
 .ftbl td.act{width:1%;white-space:nowrap;text-align:right;padding-left:8px}
 .rowbtn{display:inline-block;background:var(--accent);color:#fff;font-size:12px;font-weight:500;line-height:1.3;padding:4px 10px;border-radius:999px;white-space:nowrap}
 tr.rowlink:hover .rowbtn{background:#0077ED}
@@ -341,7 +343,6 @@ const DOC_TYPES = {
     fld('zvCode',    'Код вещества', ['код вещества', 'код зв', 'код загрязняющ'], true),
     fld('zvName',    'Наименование вещества', ['наименование вещества', 'наименование зв']),
     fld('mass',      'Масса выбросов/сбросов, т', ['масса выбросов/сбросов', 'масса выбросов', 'масса сбросов', 'масса'], true),
-    fld('power',     'Мощность, г/с (для сверки с ПЭК)', ['мощность']),
   ] },
   DVOS: { short: 'ДВОС', title: 'Декларация о воздействии на окружающую среду', fields: [
     fld('reportNo',  'Номер отчёта', ['номер отчета'], true),
@@ -366,12 +367,7 @@ const DOC_TYPES = {
     fld('objectCode','Код ОНВОС', ['код онвос', 'код объекта нвос', 'код объекта'], true),
     fld('objectName','Наименование объекта', ['наименование объекта']),
     fld('category',  'Категория объекта', ['категория объекта']),
-    fld('zvCode',    'Код загрязняющего вещества', ['код загрязняющего вещества', 'код зв', 'код вещества'], true),
-    fld('zvName',    'Загрязняющее вещество', ['загрязняющее вещество', 'наименование зв', 'наименование вещества']),
-    fld('massYear',  'Фактический выброс/сброс, т/год (W) — для общих данных', ['т/год', 'тонн/год'], false, 22),
-    fld('mass',      'Фактический выброс/сброс, г/с', ['фактический выброс', 'фактический сброс', 'фактическ'], true),
-    fld('sourceNo',  'Номер источника (S)', ['номер источника'], false, 18),
-  ] },
+  ] },   /* ПЭК: проверяется только наличие отчёта за год по объекту — вещества и массы не сверяются */
 };
 const fieldLabel = (d, k) => DOC_TYPES[d].fields.find(f => f.key === k)?.label || k;
 const short = d => DOC_TYPES[d].short;
@@ -761,7 +757,7 @@ const CAT_DOC = { II: 'DVOS', III: 'PEK' };   // третий документ �
 const CHECKS = {
   '01': 'Объект указан в ДПНВОС',
   '02': 'Объект найден в реестре ОНВОС по коду и ИНН',
-  '03': 'Третий документ категории (II — ДВОС, срок 7 лет; III — ПЭК за год)',
+  '03': 'Третий документ категории (II — ДВОС, срок 7 лет; III — наличие отчёта ПЭК за год)',
   '04': 'Коды ЗВ совпадают в документах',
   '05': 'Масса ЗВ совпадает',
 };
@@ -859,7 +855,6 @@ function analyze(S) {
       const k = norm(r.reportNo);
       let R = o.pk.reports.get(k);
       if (!R) o.pk.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), zv: new Map(), firstRow: r._row });
-      addZv(R.zv, r, o, 'PEK', '');
     }
     for (const o of objs.values()) if (o.pk) o.pk.rep = latest(o.pk.reports);
   }
@@ -913,7 +908,8 @@ function analyze(S) {
   const decls = [...declInfo.values()].map(d => {
     const list = [...d.keys].map(k => byKey.get(k)).filter(Boolean), cats = {};
     for (const x of list) { const c = cats[x.cat] ||= { n: 0, e: 0, w: 0 }; c.n++; c.e += x.errors; c.w += x.warnings; }
-    return { tot: aggTotals(list).sum, no: d.no, inns: [...d.inns], orgs: [...d.orgs], statuses: [...d.statuses], years: [...d.years].sort(), declared: d.declared.size, objects: list.length,
+    const A = aggTotals(list);
+    return { tot: A.sum, pek: A.pek, no: d.no, inns: [...d.inns], orgs: [...d.orgs], statuses: [...d.statuses], years: [...d.years].sort(), declared: d.declared.size, objects: list.length,
       cats, errors: list.reduce((a, x) => a + x.errors, 0), warnings: list.reduce((a, x) => a + x.warnings, 0) };
   }).sort((a, b) => (num(a.no) || 0) - (num(b.no) || 0));
   /* класс опасности вещества — из ДВОС (столбец U), по всем строкам файла, а не только по объекту */
@@ -934,7 +930,6 @@ function presentDocs(o) {
   if (o.dp) P.push(['DPNVOS', o.dp.rep.zv]);
   if (o.on) P.push(['ONVOS', o.on.zv]);
   if (o.cat === 'II' && o.dv) P.push(['DVOS', o.dv.rep.zv]);
-  if (o.cat === 'III' && o.pk) P.push(['PEK', o.pk.rep.zv]);
   return P;
 }
 function unionZv(P) { const s = new Set(); for (const [, zv] of P) for (const k of zv.keys()) s.add(k); return [...s].sort(); }
@@ -946,7 +941,7 @@ function zvInfo(P, z) {
   if (dp && dp.dpCode && dp.dpCode !== code) code = `${code} (ДПНВОС: ${dp.dpCode})`;
   return { zvCode: code ?? z, zvName: name, zvKey: z };
 }
-const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['ONVOS_P', 'ОНВОС AD, г/с'], ['DVOS', 'ДВОС, т'], ['PEK', 'ПЭК X, г/с']];
+const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т']];
 function valsOf(o, P, z) {
   const v = {}, has = d => P.find(x => x[0] === d);
   for (const d of ['DPNVOS', 'ONVOS', 'DVOS', 'PEK']) {
@@ -974,9 +969,7 @@ function srcRowsOf(o, P, z, tol) {
     const a = on?.src?.get(k), b = dv?.src?.get(k), c = pk?.src?.get(k);
     const vals = { DPNVOS: { t: 'na' },
       ONVOS: cell('ONVOS', on, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
-      ONVOS_P: o.cat !== 'III' ? { t: 'na' } : cell('ONVOS', on, k, x => x.power != null ? { t: 'num', n: x.power } : { t: 'empty' }),
-      DVOS: cell('DVOS', dv, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
-      PEK: cell('PEK', pk, k, x => x.hasMass ? { t: 'num', n: x.massMax } : { t: 'empty' }) };
+      DVOS: cell('DVOS', dv, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }) };
     let st = 'ok';
     if ((b && a && Math.abs(b.mass - a.mass) > tol) || (c && a && a.power != null && c.hasMass && c.massMax - a.power > tol)) st = 'bad';
     else if (Object.values(vals).some(v => v.t === 'miss' || v.t === 'empty') || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
@@ -1045,7 +1038,7 @@ function checkObject(o, M) {
   /* 05 — массы */
   if (P.length >= 2) for (const z of unionZv(P)) {
     const g = d => P.find(x => x[0] === d)?.[1].get(z);
-    const dp = g('DPNVOS'), on = g('ONVOS'), dv = g('DVOS'), pk = g('PEK');
+    const dp = g('DPNVOS'), on = g('ONVOS'), dv = g('DVOS');
     const parts = [];
     const isEmpty = e => e && e.massEmpty && !e.hasMass;
     if (dp && on) {
@@ -1070,32 +1063,6 @@ function checkObject(o, M) {
         if (miss.length) parts.push({ sev: 'warning', kind: 'Источники', cls: 'k-low', msg: 'Источники не совпадают: ' + listMsg(miss) });
       }
       else if (base && !isEmpty(base) && Math.abs(dv.mass - base.mass) > tol) parts.push({ sev: 'error', kind: 'Расхождение с ДВОС', cls: 'k-dv', msg: `ДВОС ${fmtNum(dv.mass)} т, ${on ? 'реестр' : 'ДПНВОС'} ${fmtNum(base.mass)} т` });
-    }
-    if (pk && on) {
-      if (isEmpty(pk)) parts.push({ sev: 'warning', kind: 'Пусто', cls: 'k-low', msg: 'ПЭК: фактический выброс не указан' });
-      else if (hasSrc(pk) && hasSrc(on)) {
-        /* по источникам: ПЭК (S, X г/с) ↔ мощность источника в реестре (AD) */
-        const above = [], below = [], noPow = [], notReg = [], notPek = [];
-        for (const k of srcKeys(pk, on)) {
-          const a = pk.src.get(k), b = on.src.get(k);
-          if (!b) { notReg.push(a.label); continue; }
-          if (!a) { notPek.push(b.label); continue; }
-          if (!a.hasMass) continue;
-          if (b.power == null) { noPow.push(b.label); continue; }
-          const dd = a.massMax - b.power;
-          if (dd > tol) above.push(`ист. ${a.label}: ПЭК ${fmtNum(a.massMax)}, реестр ${fmtNum(b.power)} г/с`);
-          else if (dd < -tol) below.push(`ист. ${a.label}: ПЭК ${fmtNum(a.massMax)}, реестр ${fmtNum(b.power)} г/с`);
-        }
-        if (above.length) parts.push({ sev: 'error', kind: 'ПЭК выше реестра', msg: listMsg(above) });
-        if (below.length) parts.push({ sev: 'warning', kind: 'ПЭК ниже реестра', cls: 'k-low', msg: 'ниже мощности: ' + listMsg(below) });
-        if (noPow.length) parts.push({ sev: 'warning', kind: 'Нет мощности', cls: 'k-low', msg: `в реестре не указана мощность (AD): ист. ${listMsg(noPow)}` });
-        if (notReg.length) parts.push({ sev: 'warning', kind: 'Источники', cls: 'k-low', msg: `в ПЭК есть источники, которых нет в реестре по этому веществу: ${listMsg(notReg)}` });
-        if (notPek.length) parts.push({ sev: 'warning', kind: 'Источники', cls: 'k-low', msg: `в ПЭК нет замеров по источникам: ${listMsg(notPek)}` });
-      }
-      else if (!on.hasPower) parts.push({ sev: 'warning', kind: 'Нет мощности', cls: 'k-low', msg: 'В реестре не указана мощность (AD) — сверка с ПЭК невозможна' });
-      else { const dd = pk.mass - on.power;
-        if (dd > tol) parts.push({ sev: 'error', kind: 'ПЭК выше реестра', msg: `ПЭК больше мощности в реестре на ${fmtNum(+dd.toPrecision(6))} г/с` });
-        else if (dd < -tol) parts.push({ sev: 'warning', kind: 'ПЭК ниже реестра', cls: 'k-low', msg: `ПЭК меньше мощности в реестре на ${fmtNum(+(-dd).toPrecision(6))} г/с` }); }
     }
     if (!parts.length) continue;
     const main = parts.find(x => x.sev === 'error') || parts[0];
@@ -1130,17 +1097,19 @@ function buildLines(M, findings) {
 }
 const VALID = { full: ['ok', 'ДВОС: входит'], partial: ['warnp', 'ДВОС: частично'], expired: ['fail', 'ДВОС: истекла'], future: ['fail', 'ДВОС: подана позже'], nodate: ['fail', 'ДВОС: нет даты'] };
 /* «Общие данные»: суммы по объекту и по веществам — ОНВОС AE (т), ДПНВОС V (т), ДВОС W (т), ПЭК W (т/год) */
-const TCOLS = [['ONVOS', 'ОНВОС AE, т'], ['DPNVOS', 'ДПНВОС V, т'], ['DVOS', 'ДВОС W, т'], ['PEK', 'ПЭК W, т/год']];
+const TCOLS = [['ONVOS', 'ОНВОС AE, т'], ['DPNVOS', 'ДПНВОС V, т'], ['DVOS', 'ДВОС W, т']];
+/* ПЭК — только факт наличия отчёта за год: зелёная галочка / красный крестик */
+const ynCell = v => `<span class="yn ${v ? 'y' : 'n'}" title="${v ? 'Отчёт ПЭК за год есть' : 'Отчёта ПЭК за год нет'}">${v ? '✓' : '✗'}</span>`;
 function totalsOf(o) {
-  const src = { ONVOS: o.on?.zv, DPNVOS: o.dp?.rep.zv, DVOS: o.dv?.rep.zv, PEK: o.pk?.rep.zv };
-  const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : null, DVOS: e => e.hasMass ? e.mass : null, PEK: e => e.hasYear ? e.year : null };
+  const src = { ONVOS: o.on?.zv, DPNVOS: o.dp?.rep.zv, DVOS: o.dv?.rep.zv };
+  const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : null, DVOS: e => e.hasMass ? e.mass : null };
   const zv = new Map();
   for (const [d] of TCOLS) if (src[d]) for (const [z, e] of src[d]) {
     let x = zv.get(z); if (!x) zv.set(z, x = { z, code: e.code, name: '', v: {} });
     if (!x.name && e.name) x.name = e.name;
     const n = val[d](e); x.v[d] = n == null ? (x.v[d] ?? 'empty') : (typeof x.v[d] === 'number' ? x.v[d] : 0) + n;
   }
-  return { has: Object.fromEntries(TCOLS.map(([d]) => [d, !!src[d]])), zv: [...zv.values()] };
+  return { has: Object.fromEntries(TCOLS.map(([d]) => [d, !!src[d]])), pek: !!o.pk, zv: [...zv.values()] };
 }
 /* сводит «Общие данные» по набору объектов: итог + разбивка по веществам */
 function aggTotals(objs) {
@@ -1156,7 +1125,7 @@ function aggTotals(objs) {
     for (const [d] of TCOLS) if (o.tot.has[d] && sum[d] == null) sum[d] = 0;
   }
   const list = [...zv.values()].sort((a, b) => String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
-  return { sum, list, has: Object.fromEntries(TCOLS.map(([d]) => [d, objs.some(o => o.tot.has[d])])) };
+  return { sum, list, pek: objs.some(o => o.tot.pek), has: Object.fromEntries(TCOLS.map(([d]) => [d, objs.some(o => o.tot.has[d])])) };
 }
 const totCell = (n, has) => n === undefined || n === null ? '<td class="v na">—</td>' : n === 'empty' ? '<td class="v miss"><span>пусто</span></td>' : `<td class="v">${fmtNum(+Number(n).toPrecision(12))}</td>`;
 const totText = n => n == null ? '' : n === 'empty' ? 'пусто' : +Number(n).toPrecision(12);
@@ -1167,12 +1136,12 @@ function summarizeObjects(M, findings) {
     const c = cnt.get(o.key) || { e: 0, w: 0 };
     let third = ['skip', '—'];
     if (o.cat === 'II') third = o.dv ? VALID[o.dv.rep.valid] : ['fail', 'нет ДВОС'];
-    else if (o.cat === 'III') third = o.pk ? ['ok', `ПЭК № ${o.pk.rep.no}`] : ['fail', 'нет ПЭК'];
+    else if (o.cat === 'III') third = o.pk ? ['ok', 'ПЭК ✓'] : ['fail', 'ПЭК ✗'];
     else if (o.cat === 'IV') third = M.innHas13.get(o.inn) ? ['warnp', 'IV обязательна'] : ['skip', 'IV не обязательна'];
     return { key: o.key, code: o.code, inn: o.inn, name: o.name, org: o.org, cat: o.cat, decls: o.decls, inReg: !!o.on, regCat: o.on?.cat || '', dateOut: o.on?.dateOut || null, dateUpd: o.on?.dateUpd || null,
       dpNo: o.dp ? [...o.dp.reports.values()].map(r => r.no).join(', ') : '', third, dvNo: o.dv?.rep.no || '', dvDate: o.dv?.rep.date || null, dvUntil: o.dv?.rep.until || null, pkNo: o.pk?.rep.no || '',
-      zv: { DPNVOS: o.dp ? o.dp.rep.zv.size : null, ONVOS: o.on ? o.on.zv.size : null, DVOS: o.dv ? o.dv.rep.zv.size : null, PEK: o.pk ? o.pk.rep.zv.size : null },
-      errors: c.e, warnings: c.w, tot: totalsOf(o) };
+      zv: { DPNVOS: o.dp ? o.dp.rep.zv.size : null, ONVOS: o.on ? o.on.zv.size : null, DVOS: o.dv ? o.dv.rep.zv.size : null },
+      hasPek: !!o.pk, errors: c.e, warnings: c.w, tot: totalsOf(o) };
   });
 }
 
@@ -1186,7 +1155,7 @@ const ICON = {
   upload: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
   file: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13l2 2 4-4"/></svg>',
 };
-const SHARED = { DPNVOS: 'Выбросы и сбросы, все категории в одном файле', ONVOS: 'Весь реестр — объекты всех категорий', DVOS: 'Нужна для объектов II категории', PEK: 'Нужен для объектов III категории' };
+const SHARED = { DPNVOS: 'Выбросы и сбросы, все категории в одном файле', ONVOS: 'Весь реестр — объекты всех категорий', DVOS: 'Нужна для объектов II категории', PEK: 'Для III категории — проверяется только наличие отчёта за год' };
 function renderRunState() {
   const loading = DOCS.some(d => slotOf(d)?.loading);
   $('#btn-run').disabled = loading;
@@ -1362,9 +1331,9 @@ function renderDeclList(R, stale) {
     <div class="tabs" role="tablist">${[['decls', 'Декларации'], ['summary', 'Общие данные']].map(([id, t]) => `<button role="tab" data-act="top" data-id="${id}" aria-selected="${state.top === id}">${t}</button>`).join('')}</div>
     <div class="filters"><input id="flt-list" type="search" placeholder="Номер декларации, ИНН или организация" value="${esc(state.listQ)}">
       ${noDecl.length ? `<button class="btn small" data-act="open-decl" data-id="__none__">Объекты без декларации · ${noDecl.length.toLocaleString('ru-RU')}</button>` : ''}</div>
-    ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th></th></tr></thead><tbody>
+    ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>ПЭК</th><th></th></tr></thead><tbody>
       ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">ИНН ${esc(d.inns.join(', '))}</span></td>
-        ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td class="act"><span class="rowbtn">По веществам</span></td></tr>`).join('')}
+        ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td>${ynCell(d.pek)}</td><td class="act"><span class="rowbtn">По веществам</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>` : `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Ошибок</th><th>Пред.</th><th></th></tr></thead><tbody>
       ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">${esc(d.inns.join(', '))}</span></td><td class="note">${esc(d.statuses.join(', '))}</td>
         ${CATS.slice(0, 4).map(c => `<td class="num">${d.cats[c] ? `${d.cats[c].n}${d.cats[c].e ? ` <span class="pill fail">${d.cats[c].e}</span>` : ''}` : '<span class="note">—</span>'}</td>`).join('')}
@@ -1379,9 +1348,9 @@ function renderTable() {
   const catCell = c => `<span class="pill skip">${c}</span>`, Y = state.result.settings.year;
   if (state.view === 'summary') {
     const A = aggTotals(W.objs), list = A.list.filter(x => !qq || [x.code, x.name, hazOf(x.z) && hazOf(x.z) + ' кл'].join(' ').toLowerCase().includes(qq));
-    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Код ЗВ</th><th>Наименование вещества</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>Объектов</th></tr></thead><tbody>
-      <tr class="grp"><td colspan="2">Итого по ${W.V.decl ? 'декларации' : 'выборке'}${state.cat !== 'all' ? ` · ${state.cat} категория` : ''}<small>веществ: ${A.list.length}, объектов: ${W.objs.length}</small></td>${TCOLS.map(c => totCell(A.sum[c[0]], A.has[c[0]])).join('')}<td class="num">${W.objs.length}</td></tr>
-      ${list.map(x => `<tr><td class="zv"><span class="mono">${esc(x.code)}</span>${hazTag(x.z)}</td><td>${esc(x.name)}</td>${TCOLS.map(c => totCell(x.v[c[0]], A.has[c[0]])).join('')}<td class="num">${x.objs.size}</td></tr>`).join('')}
+    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Код ЗВ</th><th>Наименование вещества</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>ПЭК</th><th>Объектов</th></tr></thead><tbody>
+      <tr class="grp"><td colspan="2">Итого по ${W.V.decl ? 'декларации' : 'выборке'}${state.cat !== 'all' ? ` · ${state.cat} категория` : ''}<small>веществ: ${A.list.length}, объектов: ${W.objs.length}</small></td>${TCOLS.map(c => totCell(A.sum[c[0]], A.has[c[0]])).join('')}<td>${ynCell(A.pek)}</td><td class="num">${W.objs.length}</td></tr>
+      ${list.map(x => `<tr><td class="zv"><span class="mono">${esc(x.code)}</span>${hazTag(x.z)}</td><td>${esc(x.name)}</td>${TCOLS.map(c => totCell(x.v[c[0]], A.has[c[0]])).join('')}<td></td><td class="num">${x.objs.size}</td></tr>`).join('')}
       </tbody></table>${!list.length ? '<div class="empty">Под фильтр ничего не попало.</div>' : ''}`;
     return;
   }
@@ -1389,12 +1358,12 @@ function renderTable() {
     const list = W.objs.filter(o => (!state.filter.onlyBad || o.errors || o.warnings) && (!qq || [o.code, o.inn, o.name].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const shown = list.slice(0, 1500);
-    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Кат.</th><th>Объект / ИНН</th><th>Наименование</th><th>Реестр</th><th>В декларации</th><th>ДВОС / ПЭК / IV</th><th>ЗВ: ДП / ОН / ДВ / ПЭК</th><th>Ошибок</th><th>Пред.</th><th>Результат</th></tr></thead><tbody>
+    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Кат.</th><th>Объект / ИНН</th><th>Наименование</th><th>Реестр</th><th>В декларации</th><th>ДВОС / ПЭК / IV</th><th>ЗВ: ДП / ОН / ДВ</th><th>Ошибок</th><th>Пред.</th><th>Результат</th></tr></thead><tbody>
       ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}"><td>${catCell(o.cat)}</td><td class="obj">${esc(o.code)}<small>${esc(o.inn)}</small></td><td>${esc(o.name)}</td>
         <td class="num">${o.inReg ? (o.dateOut ? `исключён ${fmtDate(o.dateOut)}` : 'есть') + updCell(o.dateUpd, Y) : '<span class="pill fail">нет</span>'}</td>
         <td class="num">${o.dpNo ? esc(o.dpNo) : '<span class="pill fail">нет</span>'}</td>
         <td><span class="pill ${o.third[0]}">${esc(o.third[1])}</span>${o.dvNo ? `<br><span class="note">№ ${esc(o.dvNo)} · ${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</span>` : ''}</td>
-        <td class="num">${['DPNVOS', 'ONVOS', 'DVOS', 'PEK'].map(d => o.zv[d] == null ? '—' : o.zv[d]).join(' / ')}</td>
+        <td class="num">${['DPNVOS', 'ONVOS', 'DVOS'].map(d => o.zv[d] == null ? '—' : o.zv[d]).join(' / ')}</td>
         <td class="num" style="color:${o.errors ? 'var(--err)' : 'inherit'}">${o.errors}</td><td class="num">${o.warnings}</td>
         <td>${o.errors || o.warnings ? '<span class="pill fail">есть замечания</span>' : '<span class="pill ok">прошёл все проверки</span>'}</td></tr>`).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
@@ -1498,16 +1467,16 @@ function buildReportWorkbook(R, V) {
     ['Итого', objs.length, fnd.filter(x => x.severity === 'error').length, fnd.filter(x => x.severity === 'warning').length], [],
     ['Веществ прошли все проверки', lines.filter(l => l.status === 'ok').length], ['Веществ с ошибками', lines.filter(l => l.status === 'bad').length],
   ], [44, 44, 14, 16], 'Сводка');
-  if (!V) sheet([['Декларация №', 'Организация', 'ИНН', ...TCOLS.map(c => c[1])],
-    ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), ...TCOLS.map(c => totText(d.tot[c[0]]))])], [14, 40, 14, 14, 14, 14, 14], 'Общие данные', true);
+  if (!V) sheet([['Декларация №', 'Организация', 'ИНН', ...TCOLS.map(c => c[1]), 'ПЭК'],
+    ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), ...TCOLS.map(c => totText(d.tot[c[0]])), d.pek ? 'есть' : 'нет'])], [14, 40, 14, 14, 14, 14, 8], 'Общие данные', true);
   else { const A = aggTotals(objs);
-    sheet([['Код ЗВ', 'Класс опасности', 'Наименование вещества', ...TCOLS.map(c => c[1]), 'Объектов'], ['Итого', '', '', ...TCOLS.map(c => totText(A.sum[c[0]])), objs.length],
-      ...A.list.map(x => [x.code, hazOf(x.z), x.name, ...TCOLS.map(c => totText(x.v[c[0]])), x.objs.size])], [10, 10, 44, 14, 14, 14, 14, 10], 'Общие данные', true); }
+    sheet([['Код ЗВ', 'Класс опасности', 'Наименование вещества', ...TCOLS.map(c => c[1]), 'ПЭК', 'Объектов'], ['Итого', '', '', ...TCOLS.map(c => totText(A.sum[c[0]])), A.pek ? 'есть' : 'нет', objs.length],
+      ...A.list.map(x => [x.code, hazOf(x.z), x.name, ...TCOLS.map(c => totText(x.v[c[0]])), '', x.objs.size])], [10, 10, 44, 14, 14, 14, 8, 10], 'Общие данные', true); }
   if (!V) sheet([['Декларация №', 'Организация', 'ИНН', 'Статус', 'Объектов I', 'Объектов II', 'Объектов III', 'Объектов IV', 'Ошибок', 'Предупреждений'],
     ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), d.statuses.join(', '), ...['I', 'II', 'III', 'IV'].map(c => d.cats[c]?.n || 0), d.errors, d.warnings])], [14, 40, 14, 20, 10, 10, 10, 10, 10, 14], 'Декларации', true);
-  sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование', 'Декларации', 'В реестре', 'Дата исключения', 'Дата актуализации', 'Актуализация', 'ДПНВОС №', 'ДВОС / ПЭК / IV', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', 'ПЭК №', 'ЗВ ДПНВОС', 'ЗВ ОНВОС', 'ЗВ ДВОС', 'ЗВ ПЭК', 'Ошибок', 'Предупреждений', 'Результат'],
-    ...objs.map(o => [o.cat, o.code, o.inn, o.name, o.decls.join(', '), o.inReg ? 'да' : 'нет', fmtDate(o.dateOut), fmtDate(o.dateUpd), UPD_TXT[updState(o.dateUpd, R.settings.year)] || '', o.dpNo || 'нет', o.third[1], o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), o.pkNo, o.zv.DPNVOS ?? '', o.zv.ONVOS ?? '', o.zv.DVOS ?? '', o.zv.PEK ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
-    [8, 19, 13, 40, 14, 9, 14, 14, 20, 12, 18, 12, 14, 14, 12, 9, 9, 9, 9, 9, 12, 20], 'Объекты', true);
+  sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование', 'Декларации', 'В реестре', 'Дата исключения', 'Дата актуализации', 'Актуализация', 'ДПНВОС №', 'ДВОС / ПЭК / IV', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', 'ПЭК', 'ЗВ ДПНВОС', 'ЗВ ОНВОС', 'ЗВ ДВОС', 'Ошибок', 'Предупреждений', 'Результат'],
+    ...objs.map(o => [o.cat, o.code, o.inn, o.name, o.decls.join(', '), o.inReg ? 'да' : 'нет', fmtDate(o.dateOut), fmtDate(o.dateUpd), UPD_TXT[updState(o.dateUpd, R.settings.year)] || '', o.dpNo || 'нет', o.third[1], o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), o.hasPek ? 'есть' : 'нет', o.zv.DPNVOS ?? '', o.zv.ONVOS ?? '', o.zv.DVOS ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
+    [8, 19, 13, 40, 14, 9, 14, 14, 20, 12, 18, 12, 14, 14, 8, 9, 9, 9, 9, 12, 20], 'Объекты', true);
   sheet([['№', 'Уровень', 'Проверка', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Тип', 'Описание', 'Документ', 'Строка в файле'],
     ...fnd.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.cat, x.objectCode || '', x.inn || '', x.objectName || '', x.zvCode || '', hazOf(x.zvKey), x.zvName || '', ...VCOLS.map(c => vText(x.vals?.[c[0]])), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
     [6, 15, 9, 8, 19, 13, 36, 9, 10, 36, ...VCOLS.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
