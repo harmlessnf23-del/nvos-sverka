@@ -245,6 +245,10 @@ summary:hover{color:var(--fg)}
 .catbox em{font-style:normal;font-size:12.5px;display:flex;gap:10px}
 .catbox i{font-style:normal;font-weight:600}
 .catbox i.e{color:var(--err,#D70015)} .catbox i.w{color:var(--warn,#B25000)}
+/* кнопка в строке таблицы: маленькая, залитая синим, в одну строку */
+.ftbl td.act{width:1%;white-space:nowrap;text-align:right;padding-left:8px}
+.rowbtn{display:inline-block;background:var(--accent);color:#fff;font-size:12px;font-weight:500;line-height:1.3;padding:4px 10px;border-radius:999px;white-space:nowrap}
+tr.rowlink:hover .rowbtn{background:#0077ED}
 tr.rowlink{cursor:pointer} tr.rowlink:hover td{background:rgba(0,113,227,.05)}
 .pill.upd{background:var(--accent-soft);color:var(--accent)}
 .hz{display:inline-block;font-family:var(--f-ui);font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--skip-soft);color:var(--muted);vertical-align:1px;white-space:nowrap}
@@ -1360,11 +1364,11 @@ function renderDeclList(R, stale) {
       ${noDecl.length ? `<button class="btn small" data-act="open-decl" data-id="__none__">Объекты без декларации · ${noDecl.length.toLocaleString('ru-RU')}</button>` : ''}</div>
     ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th></th></tr></thead><tbody>
       ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">ИНН ${esc(d.inns.join(', '))}</span></td>
-        ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td><span class="btn small">По веществам</span></td></tr>`).join('')}
+        ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td class="act"><span class="rowbtn">По веществам</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>` : `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Ошибок</th><th>Пред.</th><th></th></tr></thead><tbody>
       ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">${esc(d.inns.join(', '))}</span></td><td class="note">${esc(d.statuses.join(', '))}</td>
         ${CATS.slice(0, 4).map(c => `<td class="num">${d.cats[c] ? `${d.cats[c].n}${d.cats[c].e ? ` <span class="pill fail">${d.cats[c].e}</span>` : ''}` : '<span class="note">—</span>'}</td>`).join('')}
-        <td class="num" style="color:${d.errors ? 'var(--err)' : 'inherit'}">${d.errors}</td><td class="num">${d.warnings}</td><td><span class="btn small">Открыть</span></td></tr>`).join('')}
+        <td class="num" style="color:${d.errors ? 'var(--err)' : 'inherit'}">${d.errors}</td><td class="num">${d.warnings}</td><td class="act"><span class="rowbtn">Открыть</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>`}
   </div>`;
   updateExportBtn();
