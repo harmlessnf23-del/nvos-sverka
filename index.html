@@ -302,7 +302,7 @@ const DOC_TYPES = {
     fld('zvCode',    'Код ЗВ', ['код зв', 'код загрязняющ', 'код вещества'], true),
     fld('zvName',    'Наименование ЗВ', ['наименование зв', 'загрязняющее вещество', 'наименование вещества']),
     fld('mass',      'Масса для сверки (НДВ/НДС), т', ['фактический выброс зв ндв', 'фактический сброс зв ндс', 'ндв тн', 'ндс'], true),
-    fld('massTotal', 'Фактически всего, т', ['фактический выброс зв всего', 'фактический сброс зв всего']),
+    fld('massTotal', 'Фактический выброс/сброс всего (V), т', ['фактический выброс зв всего', 'фактический сброс зв всего'], false, 21),
     fld('massVrv',   'В пределах ВРВ/ВРС, т', ['фактический выброс зв в пределах врв', 'фактический сброс зв в пределах врс', 'в пределах врв', 'в пределах врс']),
     fld('massOver',  'Сверх лимита, т', ['фактический выброс сверх', 'фактический сброс сверх']),
     fld('section',   'Раздел / вид воздействия', ['раздел', 'вид воздействия', 'тип воздействия']),
@@ -347,6 +347,7 @@ const DOC_TYPES = {
     fld('category',  'Категория объекта', ['категория объекта']),
     fld('zvCode',    'Код загрязняющего вещества', ['код загрязняющего вещества', 'код зв', 'код вещества'], true),
     fld('zvName',    'Загрязняющее вещество', ['загрязняющее вещество', 'наименование зв', 'наименование вещества']),
+    fld('massYear',  'Фактический выброс/сброс, т/год (W) — для общих данных', ['т/год', 'тонн/год'], false, 22),
     fld('mass',      'Фактический выброс/сброс, г/с', ['фактический выброс', 'фактический сброс', 'фактическ'], true),
     fld('sourceNo',  'Номер источника (S)', ['номер источника'], false, 18),
   ] },
@@ -713,7 +714,7 @@ async function reHead(docId, slot) {
    Сверка идёт сразу по всем категориям, результат смотрится в разрезе декларации.
    ===================================================================== */
 const DOCS = ['DPNVOS', 'ONVOS', 'DVOS', 'PEK'];
-const state = { pool: {}, result: null, stale: false, view: 'objects', cat: 'all', listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
+const state = { pool: {}, result: null, stale: false, view: 'objects', top: 'decls', cat: 'all', listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
 const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001, decl: '' };
 const slotOf = d => state.pool[d];
 const poolKey = d => d;
@@ -766,10 +767,12 @@ function analyze(S) {
     const z = normZv(r.zvCode), m = num(r.mass);
     if (!z) { if (m) (o.empty[doc] ||= []).push(r._row); return; }
     let e = map.get(z);
-    if (!e) { e = { code: String(r.zvCode).trim(), name: r.zvName ? String(r.zvName).trim() : '', mass: 0, hasMass: false, massEmpty: false, over: 0, vrv: 0, rows: [], air: false, water: false }; map.set(z, e); }
+    if (!e) { e = { code: String(r.zvCode).trim(), name: r.zvName ? String(r.zvName).trim() : '', mass: 0, hasMass: false, massEmpty: false, over: 0, vrv: 0, total: 0, hasTotal: false, year: 0, hasYear: false, rows: [], air: false, water: false }; map.set(z, e); }
     if (m == null) e.massEmpty = true; else { e.mass += m; e.hasMass = true; }
     if (!e.name && r.zvName) e.name = String(r.zvName).trim();
     e.over += num(r.massOver) || 0; e.vrv += num(r.massVrv) || 0;
+    const mt = num(r.massTotal); if (mt != null) { e.total += mt; e.hasTotal = true; }
+    const my = num(r.massYear); if (my != null) { e.year += my; e.hasYear = true; }
     if (imp === 'water') e.water = true; else if (imp === 'air') e.air = true;
     const pw = r.power !== undefined && imp !== 'water' ? num(r.power) : null;
     if (pw != null) { e.power = (e.power || 0) + pw; e.hasPower = true; }
@@ -849,7 +852,7 @@ function analyze(S) {
       if (!other.has(k2)) continue;
       R.zv.delete(k);
       const t = R.zv.get(k2);
-      if (t) { t.mass += e.mass; t.hasMass ||= e.hasMass; t.massEmpty ||= e.massEmpty; t.over += e.over; t.vrv += e.vrv; t.rows.push(...e.rows); t.air ||= e.air; t.water ||= e.water; }
+      if (t) { t.mass += e.mass; t.hasMass ||= e.hasMass; t.massEmpty ||= e.massEmpty; t.over += e.over; t.vrv += e.vrv; t.total += e.total; t.hasTotal ||= e.hasTotal; t.rows.push(...e.rows); t.air ||= e.air; t.water ||= e.water; }
       else R.zv.set(k2, { ...e, dpCode: e.code });
     }
   }
@@ -889,7 +892,7 @@ function analyze(S) {
   const decls = [...declInfo.values()].map(d => {
     const list = [...d.keys].map(k => byKey.get(k)).filter(Boolean), cats = {};
     for (const x of list) { const c = cats[x.cat] ||= { n: 0, e: 0, w: 0 }; c.n++; c.e += x.errors; c.w += x.warnings; }
-    return { no: d.no, inns: [...d.inns], orgs: [...d.orgs], statuses: [...d.statuses], years: [...d.years].sort(), declared: d.declared.size, objects: list.length,
+    return { tot: aggTotals(list).sum, no: d.no, inns: [...d.inns], orgs: [...d.orgs], statuses: [...d.statuses], years: [...d.years].sort(), declared: d.declared.size, objects: list.length,
       cats, errors: list.reduce((a, x) => a + x.errors, 0), warnings: list.reduce((a, x) => a + x.warnings, 0) };
   }).sort((a, b) => (num(a.no) || 0) - (num(b.no) || 0));
   /* класс опасности вещества — из ДВОС (столбец U), по всем строкам файла, а не только по объекту */
@@ -1105,6 +1108,37 @@ function buildLines(M, findings) {
   return lines;
 }
 const VALID = { full: ['ok', 'ДВОС: входит'], partial: ['warnp', 'ДВОС: частично'], expired: ['fail', 'ДВОС: истекла'], future: ['fail', 'ДВОС: подана позже'], nodate: ['fail', 'ДВОС: нет даты'] };
+/* «Общие данные»: суммы по объекту и по веществам — ОНВОС AE (т), ДПНВОС V (т), ДВОС W (т), ПЭК W (т/год) */
+const TCOLS = [['ONVOS', 'ОНВОС AE, т'], ['DPNVOS', 'ДПНВОС V, т'], ['DVOS', 'ДВОС W, т'], ['PEK', 'ПЭК W, т/год']];
+function totalsOf(o) {
+  const src = { ONVOS: o.on?.zv, DPNVOS: o.dp?.rep.zv, DVOS: o.dv?.rep.zv, PEK: o.pk?.rep.zv };
+  const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : null, DVOS: e => e.hasMass ? e.mass : null, PEK: e => e.hasYear ? e.year : null };
+  const zv = new Map();
+  for (const [d] of TCOLS) if (src[d]) for (const [z, e] of src[d]) {
+    let x = zv.get(z); if (!x) zv.set(z, x = { z, code: e.code, name: '', v: {} });
+    if (!x.name && e.name) x.name = e.name;
+    const n = val[d](e); x.v[d] = n == null ? (x.v[d] ?? 'empty') : (typeof x.v[d] === 'number' ? x.v[d] : 0) + n;
+  }
+  return { has: Object.fromEntries(TCOLS.map(([d]) => [d, !!src[d]])), zv: [...zv.values()] };
+}
+/* сводит «Общие данные» по набору объектов: итог + разбивка по веществам */
+function aggTotals(objs) {
+  const sum = Object.fromEntries(TCOLS.map(([d]) => [d, null])), zv = new Map();
+  for (const o of objs) {
+    for (const x of o.tot.zv) {
+      let y = zv.get(x.z); if (!y) zv.set(x.z, y = { z: x.z, code: x.code, name: x.name, v: {}, objs: new Set() });
+      if (!y.name && x.name) y.name = x.name; y.objs.add(o.key);
+      for (const [d] of TCOLS) { const n = x.v[d]; if (n === undefined) continue;
+        if (typeof n === 'number') { y.v[d] = (typeof y.v[d] === 'number' ? y.v[d] : 0) + n; sum[d] = (sum[d] || 0) + n; }
+        else if (y.v[d] === undefined) y.v[d] = 'empty'; }
+    }
+    for (const [d] of TCOLS) if (o.tot.has[d] && sum[d] == null) sum[d] = 0;
+  }
+  const list = [...zv.values()].sort((a, b) => String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
+  return { sum, list, has: Object.fromEntries(TCOLS.map(([d]) => [d, objs.some(o => o.tot.has[d])])) };
+}
+const totCell = (n, has) => n === undefined || n === null ? '<td class="v na">—</td>' : n === 'empty' ? '<td class="v miss"><span>пусто</span></td>' : `<td class="v">${fmtNum(+Number(n).toPrecision(12))}</td>`;
+const totText = n => n == null ? '' : n === 'empty' ? 'пусто' : +Number(n).toPrecision(12);
 function summarizeObjects(M, findings) {
   const cnt = new Map();
   for (const x of findings) { const c = cnt.get(x.objKey) || { e: 0, w: 0 }; x.severity === 'error' ? c.e++ : c.w++; cnt.set(x.objKey, c); }
@@ -1117,7 +1151,7 @@ function summarizeObjects(M, findings) {
     return { key: o.key, code: o.code, inn: o.inn, name: o.name, org: o.org, cat: o.cat, decls: o.decls, inReg: !!o.on, regCat: o.on?.cat || '', dateOut: o.on?.dateOut || null, dateUpd: o.on?.dateUpd || null,
       dpNo: o.dp ? [...o.dp.reports.values()].map(r => r.no).join(', ') : '', third, dvNo: o.dv?.rep.no || '', dvDate: o.dv?.rep.date || null, dvUntil: o.dv?.rep.until || null, pkNo: o.pk?.rep.no || '',
       zv: { DPNVOS: o.dp ? o.dp.rep.zv.size : null, ONVOS: o.on ? o.on.zv.size : null, DVOS: o.dv ? o.dv.rep.zv.size : null, PEK: o.pk ? o.pk.rep.zv.size : null },
-      errors: c.e, warnings: c.w };
+      errors: c.e, warnings: c.w, tot: totalsOf(o) };
   });
 }
 
@@ -1274,10 +1308,10 @@ function renderReport() {
       <div class="stat ok"><b>${lines.filter(l => l.status === 'ok').length.toLocaleString('ru-RU')} / ${lines.length.toLocaleString('ru-RU')}</b><span>веществ прошли все проверки</span></div>
     </div>
     <div class="tabs" role="tablist">
-      ${[['objects', 'Объекты'], ['lines', 'Вещества'], ['findings', 'Замечания']].map(([id, t]) => `<button role="tab" data-act="view" data-id="${id}" aria-selected="${state.view === id}">${t}</button>`).join('')}
+      ${[['summary', 'Общие данные'], ['objects', 'Объекты'], ['lines', 'Вещества'], ['findings', 'Замечания']].map(([id, t]) => `<button role="tab" data-act="view" data-id="${id}" aria-selected="${state.view === id}">${t}</button>`).join('')}
     </div>
     <div class="filters">
-      ${state.view === 'findings' ? `<select id="flt-sev" aria-label="Уровень"><option value="all">Все уровни</option><option value="error" ${state.filter.sev === 'error' ? 'selected' : ''}>Ошибки</option><option value="warning" ${state.filter.sev === 'warning' ? 'selected' : ''}>Предупреждения</option></select>`
+      ${state.view === 'summary' ? '' : state.view === 'findings' ? `<select id="flt-sev" aria-label="Уровень"><option value="all">Все уровни</option><option value="error" ${state.filter.sev === 'error' ? 'selected' : ''}>Ошибки</option><option value="warning" ${state.filter.sev === 'warning' ? 'selected' : ''}>Предупреждения</option></select>`
         : state.view === 'lines' ? `<select id="flt-line" aria-label="Результат">${[['all', 'Все вещества'], ['ok', 'Прошли все проверки'], ['obj', 'Замечания по объекту (вещество сошлось)'], ['warn', 'Предупреждения по веществу'], ['bad', 'Ошибки по веществу']].map(([v, t]) => `<option value="${v}" ${state.filter.line === v ? 'selected' : ''}>${t}${v !== 'all' ? ' · ' + lines.filter(l => l.status === v).length.toLocaleString('ru-RU') : ''}</option>`).join('')}</select>
           <select id="flt-grp" aria-label="Группировка"><option value="zv" ${state.filter.grp !== 'src' ? 'selected' : ''}>По веществам (клик — разбивка по источникам)</option><option value="src" ${state.filter.grp === 'src' ? 'selected' : ''}>Группировать по источникам</option></select>`
         : `<label><input type="checkbox" id="flt-bad" ${state.filter.onlyBad ? 'checked' : ''}> только с замечаниями</label>`}
@@ -1304,13 +1338,17 @@ function renderDeclList(R, stale) {
       <div class="stat err"><b>${errs.toLocaleString('ru-RU')}</b><span>ошибок</span></div>
       <div class="stat warn"><b>${(R.findings.length - errs).toLocaleString('ru-RU')}</b><span>предупреждений</span></div>
     </div>
+    <div class="tabs" role="tablist">${[['decls', 'Декларации'], ['summary', 'Общие данные']].map(([id, t]) => `<button role="tab" data-act="top" data-id="${id}" aria-selected="${state.top === id}">${t}</button>`).join('')}</div>
     <div class="filters"><input id="flt-list" type="search" placeholder="Номер декларации, ИНН или организация" value="${esc(state.listQ)}">
       ${noDecl.length ? `<button class="btn small" data-act="open-decl" data-id="__none__">Объекты без декларации · ${noDecl.length.toLocaleString('ru-RU')}</button>` : ''}</div>
-    <div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Ошибок</th><th>Пред.</th><th></th></tr></thead><tbody>
-      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-id="${esc(d.no)}"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">${esc(d.inns.join(', '))}</span></td><td class="note">${esc(d.statuses.join(', '))}</td>
+    ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">ИНН ${esc(d.inns.join(', '))}</span></td>
+        ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td><span class="btn small">По веществам</span></td></tr>`).join('')}
+    </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>` : `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Ошибок</th><th>Пред.</th><th></th></tr></thead><tbody>
+      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br><span class="note">${esc(d.inns.join(', '))}</span></td><td class="note">${esc(d.statuses.join(', '))}</td>
         ${CATS.slice(0, 4).map(c => `<td class="num">${d.cats[c] ? `${d.cats[c].n}${d.cats[c].e ? ` <span class="pill fail">${d.cats[c].e}</span>` : ''}` : '<span class="note">—</span>'}</td>`).join('')}
         <td class="num" style="color:${d.errors ? 'var(--err)' : 'inherit'}">${d.errors}</td><td class="num">${d.warnings}</td><td><span class="btn small">Открыть</span></td></tr>`).join('')}
-    </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>
+    </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>`}
   </div>`;
   updateExportBtn();
 }
@@ -1318,6 +1356,14 @@ function renderTable() {
   const W = state._view; if (!W || !$('#findings')) return;
   const qq = state.filter.q.trim().toLowerCase();
   const catCell = c => `<span class="pill skip">${c}</span>`, Y = state.result.settings.year;
+  if (state.view === 'summary') {
+    const A = aggTotals(W.objs), list = A.list.filter(x => !qq || [x.code, x.name, hazOf(x.z) && hazOf(x.z) + ' кл'].join(' ').toLowerCase().includes(qq));
+    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Код ЗВ</th><th>Наименование вещества</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>Объектов</th></tr></thead><tbody>
+      <tr class="grp"><td colspan="2">Итого по ${W.V.decl ? 'декларации' : 'выборке'}${state.cat !== 'all' ? ` · ${state.cat} категория` : ''}<small>веществ: ${A.list.length}, объектов: ${W.objs.length}</small></td>${TCOLS.map(c => totCell(A.sum[c[0]], A.has[c[0]])).join('')}<td class="num">${W.objs.length}</td></tr>
+      ${list.map(x => `<tr><td class="zv"><span class="mono">${esc(x.code)}</span>${hazTag(x.z)}</td><td>${esc(x.name)}</td>${TCOLS.map(c => totCell(x.v[c[0]], A.has[c[0]])).join('')}<td class="num">${x.objs.size}</td></tr>`).join('')}
+      </tbody></table>${!list.length ? '<div class="empty">Под фильтр ничего не попало.</div>' : ''}`;
+    return;
+  }
   if (state.view === 'objects') {
     const list = W.objs.filter(o => (!state.filter.onlyBad || o.errors || o.warnings) && (!qq || [o.code, o.inn, o.name].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
@@ -1431,6 +1477,11 @@ function buildReportWorkbook(R, V) {
     ['Итого', objs.length, fnd.filter(x => x.severity === 'error').length, fnd.filter(x => x.severity === 'warning').length], [],
     ['Веществ прошли все проверки', lines.filter(l => l.status === 'ok').length], ['Веществ с ошибками', lines.filter(l => l.status === 'bad').length],
   ], [44, 44, 14, 16], 'Сводка');
+  if (!V) sheet([['Декларация №', 'Организация', 'ИНН', ...TCOLS.map(c => c[1])],
+    ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), ...TCOLS.map(c => totText(d.tot[c[0]]))])], [14, 40, 14, 14, 14, 14, 14], 'Общие данные', true);
+  else { const A = aggTotals(objs);
+    sheet([['Код ЗВ', 'Класс опасности', 'Наименование вещества', ...TCOLS.map(c => c[1]), 'Объектов'], ['Итого', '', '', ...TCOLS.map(c => totText(A.sum[c[0]])), objs.length],
+      ...A.list.map(x => [x.code, hazOf(x.z), x.name, ...TCOLS.map(c => totText(x.v[c[0]])), x.objs.size])], [10, 10, 44, 14, 14, 14, 14, 10], 'Общие данные', true); }
   if (!V) sheet([['Декларация №', 'Организация', 'ИНН', 'Статус', 'Объектов I', 'Объектов II', 'Объектов III', 'Объектов IV', 'Ошибок', 'Предупреждений'],
     ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), d.statuses.join(', '), ...['I', 'II', 'III', 'IV'].map(c => d.cats[c]?.n || 0), d.errors, d.warnings])], [14, 40, 14, 20, 10, 10, 10, 10, 10, 14], 'Декларации', true);
   sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование', 'Декларации', 'В реестре', 'Дата исключения', 'Дата актуализации', 'Актуализация', 'ДПНВОС №', 'ДВОС / ПЭК / IV', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', 'ПЭК №', 'ЗВ ДПНВОС', 'ЗВ ОНВОС', 'ЗВ ДВОС', 'ЗВ ПЭК', 'Ошибок', 'Предупреждений', 'Результат'],
@@ -1492,9 +1543,9 @@ function demoData() {
     [5044465, '18.08.2022', 2021, A[1], A[0], A[2], '2', 'Азота диоксид', '0301', 0.140382, '6001', 3], [5044465, '18.08.2022', 2021, A[1], A[0], A[2], '2', 'Углерод оксид', '0337', 0.549213, '6001', 4],
     [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Азота диоксид', '0301', 0.8, '0001', 3], [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Азота диоксид', '0301', 0.4, '0002', 3],
     [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Сера диоксид', '0330', 0.48, '0001', 3]];
-  const pek = [['Номер отчёта', 'Год отчёта', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория объекта', 'Код Загрязняющего вещества из 2.1', 'Загрязняющее вещество из 2.1', 'Фактический выброс', 'Номер источника'],
-    [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0035', '0001'], [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0015', '0002'],
-    [7400001, 2025, E[1], E[0], E[2], 3, '0301', 'Азота диоксид', '0.001', '0001']];
+  const pek = [['Номер отчёта', 'Год отчёта', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория объекта', 'Код Загрязняющего вещества из 2.1', 'Загрязняющее вещество из 2.1', 'Фактический выброс', 'Номер источника', 'Фактический выброс, т/год'],
+    [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0035', '0001', 0.055], [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0015', '0002', 0.03],
+    [7400001, 2025, E[1], E[0], E[2], 3, '0301', 'Азота диоксид', '0.001', '0001', 0.028]];
   return { DPNVOS: dp, ONVOS: on, DVOS: dv, PEK: pek };
 }
 function loadDemo() {
@@ -1522,7 +1573,8 @@ document.addEventListener('click', e => {
   else if (act === 'clear') { for (const dd of DOCS) { const s = slotOf(dd); if (s?.worker) s.worker.terminate(); delete state.pool[dd]; } state.result = null; state.stale = false; SETTINGS.decl = ''; renderAll(); }
   else if (act === 'view') { state.view = el.dataset.id; renderReport(); }
   else if (act === 'vcat') { state.cat = el.dataset.id; renderReport(); }
-  else if (act === 'open-decl') applyDecl(el.dataset.id);
+  else if (act === 'open-decl') { if (el.dataset.view) state.view = el.dataset.view; applyDecl(el.dataset.id); }
+  else if (act === 'top') { state.top = el.dataset.id; renderReport(); }
   else if (act === 'run') runNow();
   else if (act === 'export') exportReport();
   else if (act === 'decl-find') applyDecl($('#p-decl').value);
