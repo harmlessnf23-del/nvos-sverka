@@ -348,7 +348,7 @@ tr.open .srcn::before{content:"▾ ";}
 .prob .pt{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prob .bar{display:block;height:6px;margin-top:4px;border-radius:999px;background:#E4E8EF;overflow:hidden}
 .prob .bar i{display:block;height:100%;border-radius:999px;background:var(--err)}
-.prob .bar i.w{background:#D97706}
+.prob .bar i.w{background:var(--warn-fill)}
 .prob .pn{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .prob .pn small{display:block;font-weight:400;color:var(--muted);font-size:11.5px}
 .ws{display:flex;flex-wrap:wrap;overflow:hidden;align-items:stretch}
@@ -458,7 +458,7 @@ tr.open .srcn::before{content:"▾ ";}
   --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#EDF2F7; --fg:#0B1F33; --muted:#718096; --faint:#718096;
   --line:rgba(11,31,51,.16); --line-2:#CBD5E0; --tabline:#D5DEF4;
   --accent:#479C80; --accent-hover:#3A7F65; --accent-soft:#E3F3EF; --accent-text:#3A7F65; --accent-100:#BBE1D6; --accent-800:#346E58;
-  --err:#C53030; --err-soft:#FED7D7; --warn:#9C4221; --warn-soft:#FEEBC8; --ok:#346E58; --ok-soft:#BBE1D6; --skip:#2D3748; --skip-soft:#E2E8F0;
+  --err:#C53030; --err-soft:#FED7D7; --warn:#7A5600; --warn-soft:#FFF4CC; --warn-fill:#ECB000; --ok:#346E58; --ok-soft:#BBE1D6; --skip:#2D3748; --skip-soft:#E2E8F0;
   --rail:#FFFFFF; --rail-2:#EDF2F7; --rail-3:#E3F3EF; --rail-fg:#2D3748; --rail-dim:#718096; --mint:#479C80;
   --f-ui:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   --f-mono:"Inter",-apple-system,"Segoe UI",sans-serif;
@@ -536,7 +536,7 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .prob:hover{background:#EDF2F7}
 .prob.on{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
 .prob .bar{background:#E2E8F0;height:4px}
-.prob .bar i{background:#E53E3E} .prob .bar i.w{background:#DD6B20}
+.prob .bar i{background:#E53E3E} .prob .bar i.w{background:var(--warn-fill)}
 .ws{border:1px solid var(--line);border-radius:8px}
 .ws-item{border-radius:6px}
 .ws-item:hover{background:#F7FAFC}
@@ -596,7 +596,7 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .probs{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 20px}
 .prob{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 12px;min-height:52px}
 .psev{display:inline-block;width:8px;height:8px;border-radius:50%;background:#E53E3E;flex:none}
-.psev.w{background:#DD6B20} .psev.mix{background:linear-gradient(90deg,#E53E3E 50%,#DD6B20 50%)}
+.psev.w{background:var(--warn-fill)} .psev.mix{background:linear-gradient(90deg,#E53E3E 50%,var(--warn-fill) 50%)}
 .pmain{min-width:0;display:flex;flex-direction:column;gap:4px}
 .prob .pt{font-size:14px;font-weight:500;color:var(--fg);white-space:normal;line-height:1.3;overflow:visible}
 .pmeta{display:flex;align-items:center;gap:4px;min-width:0}
@@ -644,6 +644,11 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .app.collapsed .rail #btn-run:hover{background:#F3FAF7;filter:none}
 .app.collapsed .rail #btn-run .emb-run{background:transparent}
 .app.collapsed .rail #btn-run .emb-run .emb-svg{width:30px;height:30px}
+/* v41: предупреждения — янтарно-жёлтые и треугольником, чтобы не путать с ошибками */
+.psev.w,.kpi .lbl i.tri{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:10px;height:9px}
+.ftbl tr.warning td.sev::before{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:8px;height:7px;background:var(--warn-fill)}
+.cnt-w::before,.pill.warnp::before{content:"";display:inline-block;width:7px;height:6px;margin-right:4px;vertical-align:1px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)}
+.prob .bar i.w{background:var(--warn-fill)}
 @media (max-width:900px){
   .mh{gap:12px;padding:0 12px}
   .mh-priv,.mh-crumb{display:none}
@@ -1861,7 +1866,7 @@ function renderSummary(R) {
       <div class="kpi ringk"><div class="ring" style="background:conic-gradient(var(--mint) 0 ${pct}%, #E4E8EF ${pct}% 100%)" aria-hidden="true"><b>${pct}%</b></div>
         <div><div class="lbl">Без замечаний</div><div class="big" style="font-size:22px">${clean.toLocaleString('ru-RU')}</div><div class="sub">из ${D.length.toLocaleString('ru-RU')} деклараций</div></div></div>
       <div class="kpi"><div class="lbl"><i style="background:var(--err)"></i>Ошибки</div><div class="big">${errs.toLocaleString('ru-RU')}</div><div class="sub">в ${withE.toLocaleString('ru-RU')} декларациях</div></div>
-      <div class="kpi"><div class="lbl"><i style="background:#D97706"></i>Предупреждения</div><div class="big">${(R.findings.length - errs).toLocaleString('ru-RU')}</div><div class="sub">в ${withW.toLocaleString('ru-RU')} декларациях</div></div>
+      <div class="kpi"><div class="lbl"><i class="tri" style="background:var(--warn-fill)"></i>Предупреждения</div><div class="big">${(R.findings.length - errs).toLocaleString('ru-RU')}</div><div class="sub">в ${withW.toLocaleString('ru-RU')} декларациях</div></div>
       <div class="kpi"><div class="lbl">Документы</div><ul class="kdocs">${docState}</ul><button type="button" class="btn ghost small" data-act="nav" data-id="docs" style="margin:6px 0 0 -10px">Заменить файлы</button></div>
     </section>
     ${top.length ? `<section class="card probs-card" aria-labelledby="probs-h">
