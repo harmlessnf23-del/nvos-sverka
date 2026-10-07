@@ -261,7 +261,7 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 tr.rowlink{cursor:pointer} tr.rowlink:hover td{background:rgba(0,113,227,.05)}
 .pill.upd{background:var(--accent-soft);color:var(--accent)}
 .hz{display:inline-block;font-family:var(--f-ui);font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--skip-soft);color:var(--muted);vertical-align:1px;white-space:nowrap}
-.ftbl td.zv{min-width:118px}
+.ftbl td.zv{min-width:96px}
 .hz.hz1{background:var(--err-soft);color:var(--err)} .hz.hz2{background:var(--warn-soft);color:var(--warn)}
 .ftbl tr.sub td{background:#FAFAFC;padding-top:7px;padding-bottom:7px;font-size:12.5px}
 .ftbl tr.sub td.obj{font-weight:400;padding-left:28px}
@@ -391,10 +391,62 @@ tr.open .srcn::before{content:"▾ ";}
 .docs-intro p{margin:0;color:var(--muted)}
 .docs-actions{display:flex;flex-wrap:wrap;gap:8px}
 .stale{border-radius:12px}
+/* свёрнутая панель */
+.rail-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.rail-top .brand{padding:0 4px;min-width:0}
+.brand-t{min-width:0}
+.rail-toggle{all:unset;cursor:pointer;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--rail-dim);flex:none}
+.rail-toggle:hover{background:var(--rail-2);color:#fff}
+.rail-toggle:focus-visible{outline:2px solid #6EA0FF;outline-offset:1px}
+.rail #btn-run{gap:8px}
+.app.collapsed .rail{flex-basis:68px;width:68px;padding:16px 10px;gap:16px}
+.app.collapsed .rail-top{flex-direction:column;gap:10px}
+.app.collapsed .rail-top .brand{padding:0}
+.app.collapsed .rail-toggle svg{transform:scaleX(-1)}
+.app.collapsed .brand-t,.app.collapsed .nav .nl,.app.collapsed .nav .cnt,.app.collapsed .rail-priv,.app.collapsed .rail .params,.app.collapsed .rail-note,.app.collapsed #btn-run .lbl{display:none}
+.app.collapsed .nav button{justify-content:center;padding:11px 0;position:relative}
+.app.collapsed .nav .dots{position:absolute;left:50%;bottom:3px;transform:translateX(-50%);gap:2px;margin:0}
+.app.collapsed .nav .dots i{width:4px;height:4px}
+.app.collapsed .rail-card{padding:0;background:transparent}
+.app.collapsed .rail #btn-run{padding:10px 0}
+/* таблицы без горизонтальной прокрутки */
+.main{padding:20px 24px 56px}
+.ftbl th,.ftbl td{padding:9px 10px}
+.ftbl th{white-space:normal;line-height:1.3}
+.ftbl td{overflow-wrap:anywhere}
+.ftbl td.v,.ftbl td.num,.ftbl .obj,.ftbl td.sev{overflow-wrap:normal}
+.ftbl th.vh{text-align:right}
+.ftbl td.note,.ftbl td.desc{max-width:none;min-width:140px}
+.ftbl .zv small{max-width:none}
+.ftbl small.blk,.note.blk{display:block;margin-top:2px}
+.ftbl td.objc{min-width:150px}
+.ftbl .obj-l{display:flex;gap:6px;align-items:center;white-space:nowrap}
+.ftbl .obj-c{font-variant-numeric:tabular-nums;font-weight:500;font-size:12.5px}
+.ftbl td.objc small{display:block;color:var(--muted);font-size:12px}
+.ftbl td.objc small.mono{font-size:11.5px}
+.ftbl td.sev small{font-weight:400}
+.ws-list{max-width:330px}
+/* рабочее место: когда места мало, список уходит наверх, карточка — на всю ширину */
+.ws{container-type:inline-size}
+.ws-detail{flex:999 1 720px}
+@container (max-width:1060px){
+  .ws-list{max-width:none;flex-basis:100%;border-right:0;border-bottom:1px solid var(--line)}
+  .ws-head{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .ws-items{max-height:232px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px}
+  .ws-more{align-self:flex-start}
+}
+.ws-detail{padding:16px 18px 18px}
+.ws-detail .catgrid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+.ws-detail .stats{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.ws-detail .decl-h h2{font-size:22px}
 @media (max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.probs{grid-template-columns:1fr}}
 @media (max-width:900px){
   .app{flex-direction:column}
   .rail{position:static;height:auto;flex:none;padding:14px 16px;gap:12px}
+  .app.collapsed .rail{flex-basis:auto;width:auto;padding:10px 16px}
+  .app.collapsed .rail-top{flex-direction:row}
+  .app.collapsed .brand-t{display:block}
+  .app.collapsed .nav,.app.collapsed .rail-card{display:none}
   .nav{flex-direction:row;flex-wrap:wrap}
   .nav li{flex:1 1 auto}
   .rail-card{margin-top:0}
@@ -409,7 +461,8 @@ tr.open .srcn::before{content:"▾ ";}
 <body>
 <div class="app">
 <nav class="rail" aria-label="Разделы">
-  <div class="brand"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19l7-7"/></svg></span><span><b>Сверка НВОС</b><small>ДПиООС</small></span></div>
+  <div class="rail-top"><div class="brand"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19l7-7"/></svg></span><span class="brand-t"><b>Сверка НВОС</b><small>ДПиООС</small></span></div>
+    <button type="button" class="rail-toggle" data-act="rail" id="rail-toggle" aria-expanded="true" aria-controls="nav" aria-label="Свернуть панель" title="Свернуть панель"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path d="M15 10l-2 2 2 2"/></svg></button></div>
   <ul class="nav" id="nav"></ul>
   <div class="rail-card">
     <div class="params" id="params"></div>
@@ -1303,12 +1356,20 @@ const ICON = {
 const SHARED = { DPNVOS: 'Выбросы и сбросы, все категории в одном файле', ONVOS: 'Весь реестр — объекты всех категорий', DVOS: 'Нужна для объектов II категории', PEK: 'Для III категории — проверяется только наличие отчёта за год' };
 function renderRunState() {
   const loading = DOCS.some(d => slotOf(d)?.loading);
-  $('#btn-run').disabled = loading;
-  $('#btn-run').textContent = loading ? 'Файлы загружаются…' : state.result ? 'Проверить заново' : 'Запустить проверку';
+  const rb = $('#btn-run'), rl = loading ? 'Файлы загружаются…' : state.result ? 'Проверить заново' : 'Запустить проверку';
+  rb.disabled = loading; rb.innerHTML = RUN_ICON + `<span class="lbl">${rl}</span>`; rb.title = rl; rb.setAttribute('aria-label', rl);
   const R = state.result;
   $('#rail-note').textContent = R ? `Проверено ${R.at.toLocaleDateString('ru-RU')} в ${R.at.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : 'Проверка ещё не запускалась';
   renderNav();
 }
+const RUN_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>';
+/* боковое меню: свёрнутое состояние запоминается в браузере */
+function applyRail() {
+  const c = !!state.railCollapsed, app = $('.app'); if (!app) return;
+  app.classList.toggle('collapsed', c);
+  const t = $('#rail-toggle'); if (t) { t.setAttribute('aria-expanded', String(!c)); const l = c ? 'Развернуть панель' : 'Свернуть панель'; t.setAttribute('aria-label', l); t.title = l; }
+}
+try { const v = localStorage.getItem('sverka-rail'); state.railCollapsed = v == null ? innerWidth < 1200 : v === '1'; } catch (e) { state.railCollapsed = innerWidth < 1200; }
 /* боковое меню */
 const NAV_ICON = {
   summary: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>',
@@ -1321,7 +1382,7 @@ function renderNav() {
   const el = $('#nav'); if (!el) return;
   const R = state.result, noDecl = R ? R.objects.filter(o => !o.decls.length).length : null;
   const cur = id => (state.page === id || (id === 'decls' && state.page === 'decl')) ? 'aria-current="page"' : '';
-  const item = (id, label, extra, dis) => `<li><button type="button" data-act="nav" data-id="${id}" ${cur(id)} ${dis ? 'disabled title="Сначала запустите проверку"' : ''}>${NAV_ICON[id]}<span>${label}</span>${extra || ''}</button></li>`;
+  const item = (id, label, extra, dis) => `<li><button type="button" data-act="nav" data-id="${id}" ${cur(id)} ${dis ? 'disabled title="Сначала запустите проверку"' : `title="${label}"`}>${NAV_ICON[id]}<span class="nl">${label}</span>${extra || ''}</button></li>`;
   const dots = `<span class="dots" aria-label="Загружено файлов: ${DOCS.filter(d => slotState(d) === 'ok').length} из 4">${DOCS.map(d => `<i class="${slotState(d)}"></i>`).join('')}</span>`;
   el.innerHTML = item('summary', 'Сводка', '', !R) + item('decls', 'Декларации', R ? `<span class="cnt">${R.decls.length.toLocaleString('ru-RU')}</span>` : '', !R)
     + item('nodecl', 'Без декларации', R ? `<span class="cnt">${noDecl.toLocaleString('ru-RU')}</span>` : '', !R) + item('docs', 'Документы', dots);
@@ -1619,10 +1680,10 @@ function renderDeclList(R, stale) {
     ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>ПЭК</th><th></th></tr></thead><tbody>
       ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td>
         ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td>${ynCell(d.pek)}</td><td class="act"><span class="rowbtn">По веществам</span></td></tr>`).join('')}
-    </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>` : `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Ошибок</th><th>Пред.</th><th></th></tr></thead><tbody>
+    </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>` : `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Замечания</th><th><span class="sr">Действие</span></th></tr></thead><tbody>
       ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td><td class="note">${esc(d.statuses.join(', '))}</td>
         ${CATS.slice(0, 4).map(c => `<td class="num">${d.cats[c] ? `${d.cats[c].n}${d.cats[c].e ? ` <span class="pill fail">${d.cats[c].e}</span>` : ''}` : '<span class="note">—</span>'}</td>`).join('')}
-        <td class="num" style="color:${d.errors ? 'var(--err)' : 'inherit'}">${d.errors}</td><td class="num">${d.warnings}</td><td class="act"><span class="rowbtn">Открыть</span></td></tr>`).join('')}
+        <td class="num">${d.errors || d.warnings ? `${d.errors ? `<span class="cnt-e" title="Ошибок">${d.errors}</span> ` : ''}${d.warnings ? `<span class="cnt-w" title="Предупреждений">${d.warnings}</span>` : ''}` : '<span class="cnt-ok">✓</span>'}</td><td class="act"><span class="rowbtn">Открыть</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>`}
   </div>`;
   updateExportBtn();
@@ -1643,14 +1704,13 @@ function renderTable() {
     const list = W.objs.filter(o => (!state.filter.onlyBad || o.errors || o.warnings) && (!qq || [o.code, o.inn, o.name].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const shown = list.slice(0, 1500);
-    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Кат.</th><th>Объект / ИНН</th><th>Наименование</th><th>Реестр</th><th>В декларации</th><th>ДВОС / ПЭК / IV</th><th>ЗВ: ДП / ОН / ДВ</th><th>Ошибок</th><th>Пред.</th><th>Результат</th></tr></thead><tbody>
-      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}"><td>${catCell(o.cat)}</td><td class="obj">${esc(o.code)}<small>${esc(o.inn)}</small></td><td>${esc(o.name)}</td>
-        <td class="num">${o.inReg ? (o.dateOut ? `исключён ${fmtDate(o.dateOut)}` : 'есть') + updCell(o.dateUpd, Y) : '<span class="pill fail">нет</span>'}</td>
+    $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Объект</th><th>Реестр</th><th>Декларация</th><th>ДВОС / ПЭК / IV</th><th title="Число веществ: ДПНВОС / ОНВОС / ДВОС">ЗВ: ДП/ОН/ДВ</th><th>Итог</th></tr></thead><tbody>
+      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}" tabindex="0" title="Открыть вещества объекта"><td class="objc"><span class="obj-l">${catCell(o.cat)}<span class="obj-c">${esc(o.code)}</span></span><small>${esc(o.name)}</small><small class="mono">ИНН ${esc(o.inn)}</small></td>
+        <td>${o.inReg ? (o.dateOut ? `исключён ${fmtDate(o.dateOut)}` : 'есть') + updCell(o.dateUpd, Y) : '<span class="pill fail">нет</span>'}</td>
         <td class="num">${o.dpNo ? esc(o.dpNo) : '<span class="pill fail">нет</span>'}</td>
-        <td><span class="pill ${o.third[0]}">${esc(o.third[1])}</span>${o.dvNo ? `<br><span class="note">№ ${esc(o.dvNo)} · ${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</span>` : ''}</td>
+        <td><span class="pill ${o.third[0]}">${esc(o.third[1])}</span>${o.dvNo ? `<small class="note blk">№ ${esc(o.dvNo)} · ${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</small>` : ''}</td>
         <td class="num">${['DPNVOS', 'ONVOS', 'DVOS'].map(d => o.zv[d] == null ? '—' : o.zv[d]).join(' / ')}</td>
-        <td class="num" style="color:${o.errors ? 'var(--err)' : 'inherit'}">${o.errors}</td><td class="num">${o.warnings}</td>
-        <td>${o.errors || o.warnings ? '<span class="pill fail">есть замечания</span>' : '<span class="pill ok">прошёл все проверки</span>'}</td></tr>`).join('')}
+        <td class="num">${o.errors || o.warnings ? `${o.errors ? `<span class="cnt-e" title="Ошибок">${o.errors}</span> ` : ''}${o.warnings ? `<span class="cnt-w" title="Предупреждений">${o.warnings}</span>` : ''}` : '<span class="cnt-ok" title="Прошёл все проверки">✓</span>'}</td></tr>`).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
     return;
   }
@@ -1658,7 +1718,7 @@ function renderTable() {
     const fl = state.filter.line;
     const list = W.lines.filter(l => (fl === 'all' || l.status === fl) && (!qq || [l.code, l.inn, l.name, l.zvCode, l.zvName, l.note, hazOf(l.zvKey) && hazOf(l.zvKey) + ' кл', ...(l.srcs || []).map(x => x.src)].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
-    const head = `<thead><tr><th>Результат</th><th>Кат.</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>Комментарий</th></tr></thead>`;
+    const head = `<thead><tr><th>Результат</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th class="vh">${c[1]}</th>`).join('')}<th>Комментарий</th></tr></thead>`;
     const pill = st => `<span class="pill ${LINE[st][0]}">${LINE_PILL[st]}</span>`;
     if (state.filter.grp === 'src') {
       /* группировка: объект → источник → вещества */
@@ -1672,8 +1732,8 @@ function renderTable() {
       for (const r of shown) {
         const g = r.l.objKey + '|' + r.sk;
         if (g !== prev) { prev = g; const n = rows.filter(x => x.l.objKey === r.l.objKey && x.sk === r.sk).length;
-          html += `<tr class="grp"><td colspan="${5 + VCOLS.length}">${esc(r.l.code)} · ${r.sk ? 'источник ' + esc(r.src) : 'без номера источника'}<small>${esc(r.l.name)} · веществ: ${n}</small></td></tr>`; }
-        html += `<tr><td>${pill(r.status)}</td><td>${catCell(r.l.cat)}</td><td class="obj">${r.sk ? 'ист. ' + esc(r.src) : '—'}<small>${esc(r.l.code)}</small></td>
+          html += `<tr class="grp"><td colspan="${4 + VCOLS.length}">${esc(r.l.code)} · ${r.sk ? 'источник ' + esc(r.src) : 'без номера источника'}<small>${esc(r.l.name)} · веществ: ${n}</small></td></tr>`; }
+        html += `<tr><td>${pill(r.status)}<small class="note blk">${r.l.cat} кат.</small></td><td class="obj">${r.sk ? 'ист. ' + esc(r.src) : '—'}<small>${esc(r.l.code)}</small></td>
           <td class="zv"><span class="mono">${esc(r.l.zvCode)}</span>${hazTag(r.l.zvKey)}<small>${esc(r.l.zvName)}</small></td>${VCOLS.map(c => valCell(r.vals[c[0]])).join('')}<td class="note">${esc(r.note || '')}</td></tr>`;
       }
       $('#findings').innerHTML = `<table class="ftbl">${head}<tbody>${html}</tbody></table>${rows.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${rows.length.toLocaleString('ru-RU')}. Полный список — в выгрузке .xlsx (лист «По источникам»).</div>` : ''}`;
@@ -1682,11 +1742,11 @@ function renderTable() {
     const shown = list.slice(0, 1500);
     $('#findings').innerHTML = `<table class="ftbl">${head}<tbody>
       ${shown.map(l => { const id = l.objKey + '|' + l.zvKey, open = l.srcs && state.openLines.has(id);
-        return `<tr${l.srcs ? ` class="rowlink${open ? ' open' : ''}" data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}</td><td>${catCell(l.cat)}</td>
+        return `<tr${l.srcs ? ` class="rowlink${open ? ' open' : ''}" data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}<small class="note blk">${l.cat} кат.</small></td>
         <td class="obj">${esc(l.code)}<small>${esc(l.name)}</small></td>
         <td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}<small>${esc(l.zvName)}</small>${l.srcs ? `<span class="srcn">источников: ${l.srcs.length}</span>` : ''}</td>
         ${VCOLS.map(c => valCell(l.vals[c[0]])).join('')}<td class="note">${esc(l.note)}</td></tr>` +
-        (open ? l.srcs.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td></td><td class="obj">источник ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
+        (open ? l.srcs.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td class="obj">источник ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length.toLocaleString('ru-RU')}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
     return;
   }
@@ -1694,16 +1754,15 @@ function renderTable() {
   const list = W.fnd.filter(x => (sev === 'all' || x.severity === sev) && (!qq || [x.objectCode, x.inn, x.zvCode, x.zvName, x.message, x.kind, x.ruleId].join(' ').toLowerCase().includes(qq)));
   if (!list.length) { $('#findings').innerHTML = `<div class="empty">${W.fnd.length ? 'Под фильтр ничего не попало.' : 'Замечаний нет.'}</div>`; return; }
   const shown = list.slice(0, 1500);
-  $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Уровень</th><th>Проверка</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th>${c[1]}</th>`).join('')}<th>Описание</th><th>Строка</th></tr></thead><tbody>
-    ${shown.map(x => `<tr class="${x.severity}"><td class="sev">${SEV[x.severity]}</td><td class="num" title="${esc(CHECKS[x.check])}">${esc(x.ruleId)}</td>
+  $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Уровень</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th class="vh">${c[1]}</th>`).join('')}<th>Описание</th></tr></thead><tbody>
+    ${shown.map(x => `<tr class="${x.severity}"><td class="sev">${SEV[x.severity] === 'Предупреждение' ? 'Предупр.' : SEV[x.severity]}<small class="note blk mono" title="${esc(CHECKS[x.check])}">${esc(x.ruleId)}</small></td>
       <td class="obj">${esc(x.objectCode || '')}<small>${esc(x.objectName || x.inn || '')}</small></td>
       <td class="zv"><span class="mono">${esc(x.zvCode || '')}</span>${hazTag(x.zvKey)}<small>${esc(x.zvName || '')}</small></td>
       ${x.vals ? VCOLS.map(c => valCell(x.vals[c[0]])).join('') : VCOLS.map(() => '<td></td>').join('')}
-      <td>${x.kind ? `<span class="kind ${x.kindCls || ''}">${esc(x.kind)}</span><br>` : ''}${esc(x.message)}</td>
-      <td class="num">${x.doc ? short(x.doc) : ''}${x.row ? ' : ' + x.row : ''}</td></tr>`).join('')}
+      <td class="desc">${x.kind ? `<span class="kind ${x.kindCls || ''}">${esc(x.kind)}</span><br>` : ''}${esc(x.message)}${x.doc ? `<small class="note blk">${short(x.doc)}${x.row ? ', строка ' + x.row : ''}</small>` : ''}</td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
 }
-function renderAll() { renderParams(); renderDeclBar(); renderSlots(); renderReport(); renderRunState(); }
+function renderAllBase() { renderParams(); renderDeclBar(); renderSlots(); renderReport(); renderRunState(); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 3500); }
 
 function runNow(after) {
@@ -1858,6 +1917,7 @@ document.addEventListener('click', e => {
   else if (act === 'run') runNow();
   else if (act === 'export') exportReport(el.dataset.scope);
   else if (act === 'nav') goPage(el.dataset.id);
+  else if (act === 'rail') { state.railCollapsed = !state.railCollapsed; try { localStorage.setItem('sverka-rail', state.railCollapsed ? '1' : '0'); } catch (e) {} applyRail(); }
   else if (act === 'g-open') openFound(el.dataset.id);
   else if (act === 'g-all') showAllFound();
   else if (act === 'g-nodecl') { hideSearchResults(); goPage('nodecl'); state.view = 'objects'; state.filter.q = el.dataset.id; renderReport(); }
@@ -1988,6 +2048,7 @@ slotsEl.addEventListener('drop', e => {
   const s = e.target.closest('.slot'); if (!s) return; e.preventDefault(); s.classList.remove('drag');
   const fl = e.dataTransfer?.files?.[0]; if (fl) openFile(s.dataset.doc, fl);
 });
+function renderAll() { renderAllBase(); applyRail(); }
 function boot() {
   if (typeof XLSX === 'undefined') { $('#slots').innerHTML = '<div class="stub" style="grid-column:1/-1"><b>Не загрузилась библиотека чтения Excel</b>Обновите страницу.</div>'; return; }
   renderAll();
