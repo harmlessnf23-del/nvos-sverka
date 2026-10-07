@@ -1750,7 +1750,7 @@ function renderDeclCard(box, R, V, stale) {
         : state.view === 'lines' ? `<select id="flt-line" aria-label="Результат">${[['all', 'Все вещества'], ['ok', 'Прошли все проверки'], ['obj', 'Замечания по объекту (вещество сошлось)'], ['warn', 'Предупреждения по веществу'], ['bad', 'Ошибки по веществу']].map(([v, t]) => `<option value="${v}" ${state.filter.line === v ? 'selected' : ''}>${t}${v !== 'all' ? ' · ' + lines.filter(l => l.status === v).length.toLocaleString('ru-RU') : ''}</option>`).join('')}</select>
           <select id="flt-grp" aria-label="Группировка"><option value="zv" ${state.filter.grp !== 'src' ? 'selected' : ''}>По веществам (клик — разбивка по источникам)</option><option value="src" ${state.filter.grp === 'src' ? 'selected' : ''}>Группировать по источникам</option></select>`
         : `<label><input type="checkbox" id="flt-bad" ${state.filter.onlyBad ? 'checked' : ''}> только с замечаниями</label>`}
-      <input id="flt-q" type="search" placeholder="Код объекта, вещество, описание" value="${esc(state.filter.q)}">
+      <label for="flt-q" class="sr">Поиск на вкладке</label><input id="flt-q" type="search" autocomplete="off" placeholder="${({ summary: 'Код или название вещества…', objects: 'Код объекта, наименование, ИНН…', lines: 'Код объекта, код или название вещества…', findings: 'Объект, вещество, описание замечания…' })[state.view] || 'Поиск…'}" value="${esc(state.filter.q)}">
     </div>
     <div class="fwrap" id="findings"></div>
   </div>`;
@@ -1985,7 +1985,7 @@ function runNow(after) {
   }, 30);
 }
 function applyDecl(v) {
-  v = String(v || '').trim(); SETTINGS.decl = v; state.cat = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' };
+  v = String(v || '').trim(); SETTINGS.decl = v; state.cat = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {};
   if (v && v !== '__none__' && slotOf('DPNVOS')?.records) {
     const s = slotOf('DPNVOS'), rows = s.records.filter(r => norm(r.reportNo) === norm(v));
     if (!rows.length) { toast(`Декларация № ${v} не найдена в ДПНВОС`); renderDeclBar(); renderReport(); return; }
@@ -2119,7 +2119,7 @@ document.addEventListener('click', e => {
   else if (act === 'demo') { loadDemo(); renderParams(); renderSlots(); renderReport(); toast('Загружены примеры — замените их своими файлами'); }
   else if (act === 'clear' && !confirm('Убрать все загруженные файлы и результат проверки?')) return;
   else if (act === 'clear') { state.page = 'docs'; for (const dd of DOCS) { const s = slotOf(dd); if (s?.worker) s.worker.terminate(); delete state.pool[dd]; } state.result = null; state.stale = false; SETTINGS.decl = ''; renderAll(); }
-  else if (act === 'view') { state.view = el.dataset.id; renderReport(); }
+  else if (act === 'view') { state.qs ||= {}; state.qs[state.view] = state.filter.q; state.view = el.dataset.id; state.filter.q = state.qs[state.view] || ''; renderReport(); }
   else if (act === 'vcat') { state.cat = el.dataset.id; renderReport(); }
   else if (act === 'open-decl') { if (el.dataset.view) state.view = el.dataset.view; applyDecl(el.dataset.id); }
   else if (act === 'top') { state.top = el.dataset.id; renderReport(); }
@@ -2131,13 +2131,13 @@ document.addEventListener('click', e => {
   else if (act === 'g-all') showAllFound();
   else if (act === 'g-nodecl') { hideSearchResults(); goPage('nodecl'); state.view = 'objects'; state.filter.q = el.dataset.id; renderReport(); }
   else if (act === 'back') goPage(state.prevPage && state.prevPage !== 'decl' && state.prevPage !== 'nodecl' ? state.prevPage : 'decls');
-  else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
+  else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {}; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
   else if (act === 'wsf') { state.wsf = el.dataset.id; renderSummary(state.result); }
   else if (act === 'rule') { state.rule = state.rule === el.dataset.id ? '' : el.dataset.id; if (state.rule && state.wsf === 'clean') state.wsf = 'all'; renderSummary(state.result); }
   else if (act === 'decl-find') applyDecl($('#p-decl').value);
   else if (act === 'decl-clear') applyDecl('');
   else if (act === 'line') { const id = el.dataset.id; state.openLines.has(id) ? state.openLines.delete(id) : state.openLines.add(id); renderTable(); }
-  else if (act === 'obj') { state.view = 'lines'; state.filter.q = el.closest('tr').querySelector('.obj').firstChild.textContent; state.filter.line = 'all'; renderReport(); }
+  else if (act === 'obj') { const o = state.result.objects.find(x => x.key === el.dataset.id); state.qs ||= {}; state.qs[state.view] = state.filter.q; state.view = 'lines'; state.filter.q = o ? o.code : ''; state.qs.lines = state.filter.q; state.filter.line = 'all'; renderReport(); }
 });
 document.addEventListener('change', async e => {
   const el = e.target, act = el.dataset?.act, d = el.dataset?.doc;
@@ -2195,7 +2195,7 @@ function openFound(no) {
   hideSearchResults();
   if (state.page === 'summary') {
     state.rule = ''; state.wsf = 'all'; SETTINGS.decl = no; state.cat = 'all';
-    state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' };
+    state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {};
     renderSummary(state.result);
     const ws = document.querySelector('.ws'); if (ws) { ws.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); ws.classList.add('ws-hit'); }
     document.querySelector(`.ws-item[data-id="${CSS.escape(no)}"]`)?.focus({ preventScroll: true });
