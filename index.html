@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="Сверка ДПНВОС, реестра ОНВОС, ДВОС и ПЭК">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%201024%201024%22%3E%3Crect%20width%3D%221024%22%20height%3D%221024%22%20rx%3D%22224%22%20fill%3D%22%23E3F3EF%22/%3E%3Cg%20fill%3D%22%239ACDBB%22%3E%3Crect%20x%3D%22255%22%20y%3D%22565%22%20width%3D%2275%22%20height%3D%22228%22/%3E%3Crect%20x%3D%22365%22%20y%3D%22441%22%20width%3D%2275%22%20height%3D%22352%22/%3E%3Crect%20x%3D%22585%22%20y%3D%22494%22%20width%3D%2275%22%20height%3D%22299%22/%3E%3Crect%20x%3D%22695%22%20y%3D%22617%22%20width%3D%2275%22%20height%3D%22176%22/%3E%3C/g%3E%3Crect%20x%3D%22210%22%20y%3D%22819%22%20width%3D%22604%22%20height%3D%2214%22%20fill%3D%22%23479C80%22/%3E%3Cg%20fill%3D%22%233A7F65%22%3E%3Crect%20x%3D%22475%22%20y%3D%22283%22%20width%3D%2275%22%20height%3D%22510%22/%3E%3Ccircle%20cx%3D%22530%22%20cy%3D%22221%22%20r%3D%2227%22/%3E%3Ccircle%20cx%3D%22551%22%20cy%3D%22177%22%20r%3D%2219%22/%3E%3Ccircle%20cx%3D%22576%22%20cy%3D%22142%22%20r%3D%2213%22/%3E%3C/g%3E%3C/svg%3E">
 <style>html,body{margin:0;padding:0}</style>
 <title>Сверка НВОС</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -616,6 +617,21 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .rulechip{max-width:100%}
 .rc-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px}
 @media (max-width:1100px){.probs{grid-template-columns:1fr}}
+/* эмблема сервиса: лист с галочкой в зелёном скруглённом квадрате */
+.emb{display:inline-grid;place-items:center;background:transparent;flex:none}
+.emb .emb-svg{width:100%;height:100%;display:block}
+.mh-mark.emb{width:32px;height:32px;border-radius:0;background:transparent}
+.rail #btn-run{gap:10px;padding:0 12px 0 6px;justify-content:flex-start}
+.rail #btn-run .emb-run{width:28px;height:28px;background:transparent}
+.rail #btn-run .emb-run .emb-svg{width:28px;height:28px}
+.app.collapsed .rail #btn-run{width:40px;height:40px;padding:0;justify-content:center;border-radius:9px;margin:0 auto;background:transparent;overflow:hidden}
+.app.collapsed .rail #btn-run:hover{background:transparent;filter:brightness(.95)}
+.app.collapsed .rail #btn-run:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app.collapsed .rail #btn-run .emb-run{width:40px;height:40px;background:transparent}
+.app.collapsed .rail #btn-run .emb-run .emb-svg{width:40px;height:40px}
+.rail #btn-run:disabled{opacity:.6}
+@media (prefers-reduced-motion:no-preference){.rail #btn-run.running .emb-svg{animation:embPulse 1s ease-in-out infinite}}
+@keyframes embPulse{50%{transform:scale(.82)}}
 @media (max-width:900px){
   .mh{gap:12px;padding:0 12px}
   .mh-priv,.mh-crumb{display:none}
@@ -629,7 +645,7 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 <body>
 <header class="mh">
   <button type="button" class="ib" data-act="rail" id="rail-toggle" aria-expanded="true" aria-controls="nav" aria-label="Свернуть меню" title="Свернуть меню"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg></button>
-  <div class="mh-brand"><span class="mh-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19l7-7"/></svg></span><span class="mh-name">Сверка НВОС</span></div>
+  <div class="mh-brand"><span class="mh-mark emb" aria-hidden="true"><svg class="emb-svg" width="24" height="24" viewBox="0 0 1024 1024" aria-hidden="true"><rect width="1024" height="1024" rx="224" fill="#E3F3EF"/><g fill="#9ACDBB"><rect x="255" y="565" width="75" height="228"/><rect x="365" y="441" width="75" height="352"/><rect x="585" y="494" width="75" height="299"/><rect x="695" y="617" width="75" height="176"/></g><rect x="210" y="819" width="604" height="14" fill="#479C80"/><g fill="#3A7F65"><rect x="475" y="283" width="75" height="510"/><circle cx="530" cy="221" r="27"/><circle cx="551" cy="177" r="19"/><circle cx="576" cy="142" r="13"/></g></svg></span><span class="mh-name">Сверка НВОС</span></div>
   <nav class="mh-crumb" aria-label="Путь"><span id="mh-page"></span></nav>
   <div class="mh-sp"></div>
   <span class="mh-priv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Файлы обрабатываются в браузере</span>
@@ -1530,12 +1546,12 @@ const SHARED = { DPNVOS: 'Выбросы и сбросы, все категор�
 function renderRunState() {
   const loading = DOCS.some(d => slotOf(d)?.loading);
   const rb = $('#btn-run'), rl = loading ? 'Файлы загружаются…' : state.result ? 'Проверить заново' : 'Запустить проверку';
-  rb.disabled = loading; rb.innerHTML = RUN_ICON + `<span class="lbl">${rl}</span>`; rb.title = rl; rb.setAttribute('aria-label', rl);
+  rb.classList.remove('running'); rb.disabled = loading; rb.innerHTML = RUN_ICON + `<span class="lbl">${rl}</span>`; rb.title = rl; rb.setAttribute('aria-label', rl);
   const R = state.result;
   $('#rail-note').textContent = R ? `Проверено ${R.at.toLocaleDateString('ru-RU')} в ${R.at.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : 'Проверка ещё не запускалась';
   renderNav();
 }
-const RUN_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>';
+const RUN_ICON = '<span class="emb emb-run"><svg class="emb-svg" width="24" height="24" viewBox="0 0 1024 1024" aria-hidden="true"><rect width="1024" height="1024" rx="224" fill="#E3F3EF"/><g fill="#9ACDBB"><rect x="255" y="565" width="75" height="228"/><rect x="365" y="441" width="75" height="352"/><rect x="585" y="494" width="75" height="299"/><rect x="695" y="617" width="75" height="176"/></g><rect x="210" y="819" width="604" height="14" fill="#479C80"/><g fill="#3A7F65"><rect x="475" y="283" width="75" height="510"/><circle cx="530" cy="221" r="27"/><circle cx="551" cy="177" r="19"/><circle cx="576" cy="142" r="13"/></g></svg></span>';
 /* боковое меню: свёрнутое состояние запоминается в браузере */
 function applyRail() {
   const c = !!state.railCollapsed, app = $('.app'); if (!app) return;
@@ -1976,7 +1992,7 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 
 function runNow(after) {
   if (!slotOf('DPNVOS')?.records && !slotOf('ONVOS')?.records) { toast('Загрузите хотя бы ДПНВОС и реестр ОНВОС'); return; }
-  const btn = $('#btn-run'); btn.disabled = true; btn.textContent = 'Проверяю…';
+  const btn = $('#btn-run'); btn.disabled = true; btn.classList.add('running'); btn.innerHTML = RUN_ICON + '<span class="lbl">Проверяю…</span>'; btn.title = 'Проверяю…';
   setTimeout(() => {
     try { state.result = analyze(SETTINGS); state.stale = false; if (state.page === 'docs') state.page = 'summary'; }
     catch (err) { console.error(err); toast('Проверка прервалась: ' + err.message); }
