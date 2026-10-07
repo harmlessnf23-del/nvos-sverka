@@ -313,6 +313,23 @@ tr.open .srcn::before{content:"▾ ";}
 .gsearch:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .gsearch input{flex:1;min-width:0;border:0;background:transparent;padding:10px 0;font:inherit;color:var(--fg)}
 .gsearch input:focus{outline:none}
+.gsearch{position:relative;padding-right:4px}
+.gs-btn{border:0;background:var(--accent);color:#fff;border-radius:9px;padding:6px 12px;font-weight:600;cursor:pointer;flex:none}
+.gs-btn:hover{background:var(--accent-hover)}
+.g-res{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;background:var(--surface);border-radius:14px;box-shadow:0 12px 40px rgba(16,24,40,.18),0 0 0 1px var(--line);padding:6px;max-height:420px;overflow:auto}
+.g-res .gr{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:10px}
+.g-res .gr:hover,.g-res .gr:focus-visible{background:var(--accent-soft);outline:none}
+.g-res .gr .wi{flex:1;min-width:0}
+.g-res .gr .no{display:block;font-family:var(--f-mono);font-size:13px;font-weight:500}
+.g-res .gr .org{display:block;color:var(--skip);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-res .gr mark{background:#FFE89A;color:inherit;border-radius:3px}
+.g-res .gh{padding:6px 10px 4px;font-size:12px;color:var(--muted)}
+.g-res .gnone{padding:12px 10px;color:var(--muted)}
+.g-res .gall{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:block;padding:9px 10px;border-radius:10px;color:var(--accent);font-weight:500;border-top:1px solid var(--line);margin-top:4px}
+.g-res .gall:hover,.g-res .gall:focus-visible{background:var(--accent-soft)}
+.ws-hit{animation:wsHit 1.2s ease-out}
+@keyframes wsHit{from{box-shadow:0 0 0 4px var(--accent)}to{box-shadow:var(--shadow)}}
+@media (prefers-reduced-motion:reduce){.ws-hit{animation:none}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .card{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow)}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
@@ -1321,7 +1338,7 @@ function renderTopbar() {
   const [t, sub] = titles[p] || titles.docs;
   const showSearch = R && p !== 'docs';
   $('#topbar').innerHTML = `<div class="tt">${p === 'decl' ? '<button class="btn ghost small" data-act="back" style="margin-left:-10px">← Назад</button>' : ''}<h1>${esc(t)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
-    ${showSearch ? `<div class="gsearch">${SEARCH_ICON}<label for="g-q" class="sr">Найти декларацию</label><input id="g-q" type="search" autocomplete="off" placeholder="№ декларации, ИНН, организация…" value="${esc(state.listQ)}"></div>` : ''}
+    ${showSearch ? `<form class="gsearch" id="g-form" role="search" autocomplete="off">${SEARCH_ICON}<label for="g-q" class="sr">Найти декларацию по номеру, ИНН или организации</label><input id="g-q" type="search" autocomplete="off" spellcheck="false" placeholder="№ декларации, ИНН, организация…" value="${esc(state.listQ)}" aria-controls="g-res" aria-expanded="false"><button type="submit" class="gs-btn">Найти</button><div class="g-res" id="g-res" hidden></div></form>` : ''}
     ${R && p !== 'docs' ? `<button class="btn primary" data-act="export" data-scope="all">${DL_ICON}Отчёт .xlsx</button>` : ''}`;
   $('#stale-box').innerHTML = R && state.stale ? '<div class="stale">Данные или параметры изменились после проверки — нажмите «Проверить заново».</div>' : '';
 }
@@ -1841,6 +1858,9 @@ document.addEventListener('click', e => {
   else if (act === 'run') runNow();
   else if (act === 'export') exportReport(el.dataset.scope);
   else if (act === 'nav') goPage(el.dataset.id);
+  else if (act === 'g-open') openFound(el.dataset.id);
+  else if (act === 'g-all') showAllFound();
+  else if (act === 'g-nodecl') { hideSearchResults(); goPage('nodecl'); state.view = 'objects'; state.filter.q = el.dataset.id; renderReport(); }
   else if (act === 'back') goPage(state.prevPage && state.prevPage !== 'decl' && state.prevPage !== 'nodecl' ? state.prevPage : 'decls');
   else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
   else if (act === 'wsf') { state.wsf = el.dataset.id; renderSummary(state.result); }
@@ -1868,18 +1888,92 @@ document.addEventListener('change', async e => {
     await loadRows(d, s);
   } catch (err) { s.loading = null; s.error = 'Ошибка чтения: ' + err.message; renderSlots(); renderRunState(); }
 });
+/* ---------- поиск в верхней строке: подсказки по мере ввода, Enter / «Найти» ---------- */
 let gqT = null;
+function searchDecls(q) {
+  const R = state.result; q = String(q || '').trim().toLowerCase(); if (!R || !q) return [];
+  const digits = /^\d+$/.test(q);
+  const score = d => {
+    if (norm(d.no).toLowerCase() === q || d.inns.includes(q)) return 0;
+    if (digits && (String(d.no).startsWith(q) || d.inns.some(i => i.startsWith(q)))) return 1;
+    if ([d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)) return 2;
+    return -1;
+  };
+  return R.decls.map(d => [score(d), d]).filter(x => x[0] >= 0).sort((a, b) => a[0] - b[0] || b[1].errors - a[1].errors).map(x => x[1]);
+}
+const hl = (t, q) => { const s = String(t ?? ''), i = q ? s.toLowerCase().indexOf(q.toLowerCase()) : -1; return i < 0 ? esc(s) : esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + q.length)) + '</mark>' + esc(s.slice(i + q.length)); };
+function renderSearchResults() {
+  const inp = $('#g-q'), box = $('#g-res'); if (!inp || !box) return;
+  const q = inp.value.trim();
+  if (!q) { box.hidden = true; inp.setAttribute('aria-expanded', 'false'); return; }
+  const list = searchDecls(q), shown = list.slice(0, 8);
+  let html = '';
+  if (list.length) {
+    html = `<div class="gh">Найдено деклараций: ${list.length.toLocaleString('ru-RU')}</div>` + shown.map(d => `<button type="button" class="gr" data-act="g-open" data-id="${esc(d.no)}">
+      <span class="wi"><span class="no">№ ${hl(d.no, q)}</span><span class="org">${hl(d.orgs.join('; ') || 'организация не указана', q)} · ИНН ${hl(d.inns.join(', '), q)}</span></span>
+      <span class="ct">${d.errors ? `<span class="cnt-e">${d.errors}</span>` : ''}${d.warnings ? `<span class="cnt-w">${d.warnings}</span>` : ''}${!d.errors && !d.warnings ? '<span class="cnt-ok">✓</span>' : ''}</span></button>`).join('')
+      + (list.length > 1 ? `<button type="button" class="gall" data-act="g-all">Показать все ${list.length.toLocaleString('ru-RU')} в списке →</button>` : '');
+  } else {
+    const inn = q.replace(/\D/g, ''), noDecl = inn.length >= 10 ? state.result.objects.filter(o => !o.decls.length && o.inn === inn).length : 0;
+    html = `<div class="gnone">По «${esc(q)}» деклараций за ${state.result.settings.year} год не найдено.</div>`
+      + (noDecl ? `<button type="button" class="gall" data-act="g-nodecl" data-id="${esc(inn)}">У ИНН ${esc(inn)} есть объекты без декларации: ${noDecl} → открыть</button>` : '');
+  }
+  box.innerHTML = html; box.hidden = false; inp.setAttribute('aria-expanded', 'true');
+}
+function hideSearchResults() { const b = $('#g-res'); if (b) b.hidden = true; $('#g-q')?.setAttribute('aria-expanded', 'false'); }
+/* открыть найденную декларацию: на сводке — в рабочем месте справа, иначе — отдельной страницей */
+function openFound(no) {
+  hideSearchResults();
+  if (state.page === 'summary') {
+    state.rule = ''; state.wsf = 'all'; SETTINGS.decl = no; state.cat = 'all';
+    state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' };
+    renderSummary(state.result);
+    const ws = document.querySelector('.ws'); if (ws) { ws.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); ws.classList.add('ws-hit'); }
+    document.querySelector(`.ws-item[data-id="${CSS.escape(no)}"]`)?.focus({ preventScroll: true });
+  } else applyDecl(no);
+}
+/* применить запрос к списку */
+function applySearch() {
+  const inp = $('#g-q'); if (!inp) return;
+  const q = inp.value.trim(); state.listQ = q;
+  const list = searchDecls(q);
+  if (q && list.length === 1) return openFound(list[0].no);
+  hideSearchResults();
+  if (!q) { renderReport(); return; }
+  if (!list.length) { renderSearchResults(); return; }
+  if (state.page === 'summary') {
+    state.rule = ''; state.wsf = 'all'; SETTINGS.decl = list[0].no; renderSummary(state.result);
+    document.querySelector('.ws')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else { if (state.page !== 'decls') { state.page = 'decls'; renderNav(); } renderReport(); }
+  toast(`Найдено деклараций: ${list.length.toLocaleString('ru-RU')}`);
+}
+/* «Показать все в списке»: список в рабочем месте (сводка) или таблица «Декларации» */
+function showAllFound() {
+  const q = $('#g-q').value.trim(); state.listQ = q; hideSearchResults();
+  if (state.page === 'summary') { state.rule = ''; state.wsf = 'all'; const l = searchDecls(q); if (l[0]) SETTINGS.decl = l[0].no; renderSummary(state.result); document.querySelector('.ws')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  else { state.page = 'decls'; renderNav(); renderReport(); }
+}
+document.addEventListener('submit', e => { if (e.target.id === 'g-form') { e.preventDefault(); applySearch(); } });
+document.addEventListener('focusin', e => { if (e.target.id === 'g-q' && e.target.value.trim()) renderSearchResults(); });
+document.addEventListener('mousedown', e => { if (!e.target.closest?.('#g-form')) hideSearchResults(); });
 document.addEventListener('input', e => {
-  if (e.target.id === 'g-q') { state.listQ = e.target.value; clearTimeout(gqT); gqT = setTimeout(() => {
-    if (state.page === 'summary') renderWsList();
-    else { if (state.page !== 'decls') { state.page = 'decls'; renderNav(); } renderReport(); const i = $('#g-q'); if (i && document.activeElement !== i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
-  }, 180); return; }
+  if (e.target.id === 'g-q') {
+    clearTimeout(gqT);
+    if (!e.target.value.trim() && state.listQ) { state.listQ = ''; hideSearchResults(); renderReport(); return; }
+    gqT = setTimeout(renderSearchResults, 120); return;
+  }
   if (e.target.id === 'flt-q') { state.filter.q = e.target.value; renderTable(); }
   if (e.target.id === 'flt-list') { state.listQ = e.target.value; const pos = e.target.selectionStart; renderReport(); const i = $('#flt-list'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } }
 });
 document.addEventListener('keydown', e => {
   if (e.target.id === 'p-decl' && e.key === 'Enter') { e.preventDefault(); applyDecl(e.target.value); }
-  if (e.target.id === 'g-q' && e.key === 'Enter') { const v = e.target.value.trim(), d = state.result?.decls.find(x => norm(x.no) === norm(v)); if (d) { e.preventDefault(); if (state.page === 'summary') { SETTINGS.decl = d.no; renderSummary(state.result); } else applyDecl(d.no); } }
+  if (e.target.id === 'g-q' && e.key === 'Escape') { hideSearchResults(); }
+  if (e.target.id === 'g-q' && e.key === 'ArrowDown') { const f = document.querySelector('#g-res .gr, #g-res .gall'); if (f) { e.preventDefault(); f.focus(); } }
+  if (e.target.closest?.('#g-res') && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault(); const it = [...document.querySelectorAll('#g-res .gr, #g-res .gall')], k = it.indexOf(e.target);
+    if (e.key === 'ArrowUp' && k <= 0) $('#g-q').focus(); else it[Math.min(it.length - 1, k + (e.key === 'ArrowDown' ? 1 : -1))]?.focus();
+  }
+  if (e.target.closest?.('#g-res') && e.key === 'Escape') { hideSearchResults(); $('#g-q').focus(); }
   if (e.key === 'Enter' && e.target.closest?.('tr.rowlink')) e.target.closest('tr.rowlink').click();
 });
 document.addEventListener('toggle', e => {
