@@ -640,6 +640,11 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .rail #btn-run .emb-run svg>g:first-of-type{fill:#7CC2AA}
 .rail #btn-run .emb-run svg>rect:nth-of-type(2){fill:#479C80}
 .rail #btn-run .emb-run svg>g:last-of-type{fill:#2C6A52}
+/* свёрнутое меню: та же насыщенная иконка, с рамкой */
+.app.collapsed .rail #btn-run .emb-run{width:40px;height:40px;border-radius:10px;box-shadow:none}
+.app.collapsed .rail #btn-run .emb-run svg>rect:first-child{fill:#fff}
+.app.collapsed .rail #btn-run{box-shadow:0 0 0 1.5px #479C80,0 2px 6px rgba(11,31,51,.14)}
+.app.collapsed .rail #btn-run:hover{box-shadow:0 0 0 2px #3A7F65,0 2px 8px rgba(11,31,51,.18)}
 @media (max-width:900px){
   .mh{gap:12px;padding:0 12px}
   .mh-priv,.mh-crumb{display:none}
