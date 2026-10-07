@@ -632,6 +632,14 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .rail #btn-run:disabled{opacity:.6}
 @media (prefers-reduced-motion:no-preference){.rail #btn-run.running .emb-svg{animation:embPulse 1s ease-in-out infinite}}
 @keyframes embPulse{50%{transform:scale(.82)}}
+/* кнопка проверки в развёрнутом меню: подпись в одну строку, иконка насыщеннее */
+.rail #btn-run{font-size:13px;white-space:nowrap;gap:8px;padding:0 10px 0 6px}
+.rail #btn-run .lbl{overflow:hidden;text-overflow:ellipsis}
+.rail #btn-run .emb-run{width:28px;height:28px;border-radius:7px;overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.35)}
+.rail #btn-run .emb-run svg>rect:first-child{fill:#fff}
+.rail #btn-run .emb-run svg>g:first-of-type{fill:#7CC2AA}
+.rail #btn-run .emb-run svg>rect:nth-of-type(2){fill:#479C80}
+.rail #btn-run .emb-run svg>g:last-of-type{fill:#2C6A52}
 @media (max-width:900px){
   .mh{gap:12px;padding:0 12px}
   .mh-priv,.mh-crumb{display:none}
