@@ -455,21 +455,178 @@ tr.open .srcn::before{content:"▾ ";}
   .ws-list{max-width:none;border-right:0;border-bottom:1px solid var(--line)}
 }
 @media (max-width:560px){.kpis{grid-template-columns:1fr}}
+
+/* =========================================================
+   Дизайн-система «Контроль Москвы · Экология» (по макету Figma «НВОС»):
+   Inter, текст #0B1F33, подписи #718096, основной зелёный #479C80,
+   скругления 6px, теги 4px, табы с зелёным подчёркиванием, светлое меню
+   ========================================================= */
+:root{
+  --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#EDF2F7; --fg:#0B1F33; --muted:#718096; --faint:#718096;
+  --line:rgba(11,31,51,.16); --line-2:#CBD5E0; --tabline:#D5DEF4;
+  --accent:#479C80; --accent-hover:#3A7F65; --accent-soft:#E3F3EF; --accent-text:#3A7F65; --accent-100:#BBE1D6; --accent-800:#346E58;
+  --err:#C53030; --err-soft:#FED7D7; --warn:#9C4221; --warn-soft:#FEEBC8; --ok:#346E58; --ok-soft:#BBE1D6; --skip:#2D3748; --skip-soft:#E2E8F0;
+  --rail:#FFFFFF; --rail-2:#EDF2F7; --rail-3:#E3F3EF; --rail-fg:#2D3748; --rail-dim:#718096; --mint:#479C80;
+  --f-ui:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"Inter",-apple-system,"Segoe UI",sans-serif;
+  --shadow:none; --r:8px; --r-s:6px;
+}
+body{letter-spacing:0;line-height:1.4;background:#fff}
+.mono{font-variant-numeric:tabular-nums}
+/* шапка */
+.mh{position:sticky;top:0;z-index:20;height:64px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:24px;padding:0 24px}
+.ib{all:unset;box-sizing:border-box;width:40px;height:40px;border-radius:6px;display:grid;place-items:center;color:#718096;cursor:pointer;flex:none}
+.ib:hover{background:#EDF2F7;color:var(--fg)}
+.ib:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mh-brand{display:flex;align-items:center;gap:10px}
+.mh-mark{width:32px;height:32px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.mh-name{font-size:16px;font-weight:600;color:var(--fg)}
+.mh-crumb{font-size:16px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:8px}
+.mh-crumb span:not(:empty)::before{content:"/";margin-right:8px;color:#CBD5E0}
+.mh-sp{flex:1}
+.mh-priv{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.mh-av{width:40px;height:40px;border-radius:8px;background:#EDF2F7;color:var(--muted);display:grid;place-items:center;font-weight:600;font-size:14px;flex:none}
+/* каркас */
+.app{min-height:calc(100vh - 64px)}
+.rail{top:64px;height:calc(100vh - 64px);background:#fff;color:var(--rail-fg);border-right:1px solid var(--line);padding:16px 12px;gap:16px;flex-basis:248px}
+.nav{gap:4px}
+.nav button{color:#2D3748;font-weight:600;border-radius:6px;padding:10px 12px}
+.nav button svg{color:#718096}
+.nav button:hover{background:#EDF2F7;color:var(--fg)}
+.nav button[aria-current="page"]{background:var(--accent-soft);color:var(--accent-text)}
+.nav button[aria-current="page"] svg{color:var(--accent)}
+.nav button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.nav .cnt{color:#718096;font-weight:500}
+.nav .dots i{background:#CBD5E0} .nav .dots i.ok{background:var(--accent)} .nav .dots i.load{background:#0D4CD3} .nav .dots i.bad{background:#E53E3E}
+.rail-card{background:#F7FAFC;border:1px solid var(--line);border-radius:8px;padding:12px}
+.rail .pf{color:#718096;font-size:13px}
+.rail .pf select,.rail .pf input{background:#EDF2F7;border:0;color:var(--fg);border-radius:6px;height:40px;padding:0 12px;font-size:14px}
+.rail .pwarn{background:var(--warn-soft);color:var(--warn);border-radius:4px}
+.rail #btn-run{background:var(--accent);color:#fff;border-radius:6px;height:40px;font-weight:600}
+.rail #btn-run:hover{background:var(--accent-hover)}
+.rail-note{color:#718096}
+.app.collapsed .rail{flex-basis:64px;width:64px;padding:12px}
+.app.collapsed .rail-card{background:transparent;border:0;padding:0}
+.main{padding:20px 32px 56px;gap:20px}
+/* заголовок страницы */
+.topbar h1{font-family:var(--f-ui);font-size:20px;font-weight:600;letter-spacing:0;color:var(--fg)}
+.topbar p{color:var(--muted)}
+.gsearch{background:#EDF2F7;border:0;border-radius:6px;height:40px;padding:0 4px 0 12px}
+.gsearch:focus-within{box-shadow:0 0 0 2px var(--accent);border-color:transparent}
+.gsearch svg{color:#718096}
+.gs-btn{background:var(--accent);border-radius:6px;height:32px;padding:0 12px}
+.gs-btn:hover{background:var(--accent-hover)}
+.g-res{border-radius:8px;box-shadow:0 8px 24px rgba(11,31,51,.14),0 0 0 1px var(--line)}
+.g-res .gr:hover,.g-res .gr:focus-visible{background:var(--accent-soft)}
+.g-res .gr mark{background:var(--accent-100)}
+/* кнопки */
+.btn{border-radius:6px;font-weight:600;font-size:14px;padding:10px 16px;color:var(--accent);box-shadow:none;background:transparent}
+.btn:hover{background:var(--accent-soft)}
+.btn.primary{background:var(--accent);color:#fff;padding:10px 16px}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.small{padding:6px 12px;font-size:14px}
+.btn.ghost{color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rowbtn{background:var(--accent);border-radius:6px;font-weight:600;font-size:13px;padding:5px 12px}
+tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
+/* карточки и итоги */
+.kpi,.card,.stat,.slot,.panel,.decl-card,.fwrap,.toolbar{box-shadow:none!important;border:1px solid var(--line);border-radius:8px}
+.kpi{padding:16px}
+.kpi .big{font-size:24px;font-weight:600;letter-spacing:0}
+.kpi .lbl,.kpi .sub,.stat span{color:#718096}
+.stat{padding:14px 16px}
+.stat b{font-size:24px;font-weight:600;letter-spacing:0}
+.ring b{font-weight:600}
+.kdocs .y{color:var(--accent)} .kdocs .n{color:#E53E3E}
+.probs-h h2,.ws-head h2{font-size:16px;font-weight:600}
+.prob{background:#F7FAFC;border-radius:6px}
+.prob:hover{background:#EDF2F7}
+.prob.on{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
+.prob .bar{background:#E2E8F0;height:4px}
+.prob .bar i{background:#E53E3E} .prob .bar i.w{background:#DD6B20}
+.ws{border:1px solid var(--line);border-radius:8px}
+.ws-item{border-radius:6px}
+.ws-item:hover{background:#F7FAFC}
+.ws-item[aria-current="true"]{background:var(--accent-soft)}
+.ws-item .org{color:#718096}
+.ws-detail .decl-card{border:0}
+.ws-detail .fwrap,.ws-detail .stat{border:1px solid var(--line)}
+.decl-h h2{font-size:20px;font-weight:600;letter-spacing:0}
+.crumb{color:#718096;font-size:14px;font-weight:400}
+/* теги */
+.pill,.chip,.kind,.badge{border-radius:4px;font-size:12px;font-weight:500;padding:3px 8px;line-height:1.4}
+.pill.ok,.chip.ok{background:var(--accent-100);color:var(--accent-800)}
+.pill.fail,.chip.bad,.kind{background:var(--err-soft);color:#9B2C2C}
+.pill.warnp,.kind.k-low,.badge{background:var(--warn-soft);color:var(--warn)}
+.pill.skip,.chip,.kind.k-dv{background:#E2E8F0;color:#1A202C}
+.pill.upd{background:#EBF4FF;color:#0D4CD3}
+.cnt-e,.cnt-w,.cnt-ok{border-radius:4px;font-weight:500}
+.cnt-e{background:var(--err-soft);color:#9B2C2C} .cnt-w{background:var(--warn-soft);color:var(--warn)} .cnt-ok{background:var(--accent-100);color:var(--accent-800)}
+.hz{border-radius:4px;background:#E2E8F0;color:#1A202C;font-weight:500}
+.hz.hz1{background:var(--err-soft);color:#9B2C2C} .hz.hz2{background:var(--warn-soft);color:var(--warn)}
+.yn.y{background:var(--accent-100);color:var(--accent-800)} .yn.n{background:var(--err-soft);color:#9B2C2C}
+.cpy{color:#4A5568} .cpy:hover{background:var(--accent-soft);color:var(--accent-text)} .cpy.done,.cpy.done svg{color:var(--accent)}
+/* табы: подчёркивание зелёным; переключатели — «скруглённые табы» */
+.tabs{background:transparent;border-radius:0;padding:0;gap:24px;border-bottom:1px solid var(--tabline);align-self:stretch}
+.tabs button{border-radius:0;padding:10px 4px 8px;color:#2D3748;font-weight:600;font-size:14px;background:transparent!important;box-shadow:none!important}
+.tabs button:hover{color:var(--fg)}
+.tabs button[aria-selected="true"]{color:var(--fg);box-shadow:inset 0 -2px 0 var(--accent)!important}
+.segm{background:transparent;padding:0;gap:8px}
+.segm button{border-radius:6px;padding:6px 10px;color:var(--fg);font-weight:600;font-size:14px;white-space:nowrap}
+.segm button:hover{background:#F7FAFC}
+.segm button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-text);box-shadow:none}
+.catbox{border:1px solid var(--line);border-radius:8px}
+.catbox.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.catbox i.e{color:#C53030} .catbox i.w{color:var(--warn)}
+.rulechip{background:var(--accent-soft);color:var(--accent-text);border-radius:4px}
+/* таблицы */
+.ftbl{font-size:14px}
+.ftbl th{background:#fff;color:#718096;font-weight:400;font-size:14px;box-shadow:inset 0 -1px 0 var(--line);backdrop-filter:none}
+.ftbl th,.ftbl td{padding:12px 8px;border-bottom:1px solid var(--line)}
+.ftbl tbody tr:hover td{background:#F7FAFC}
+.ftbl tr.grp td{background:#F7FAFC}
+.ftbl td.sev{font-size:14px}
+.ftbl .obj small,.ftbl .zv small,.ftbl td.objc small{color:#718096}
+.fwrap{border:1px solid var(--line)}
+/* поля */
+.filters select,.filters input[type=search]{background:#EDF2F7;border:0;box-shadow:none;border-radius:6px;height:40px;padding:0 12px;font-size:14px;color:var(--fg)}
+.filters input[type=search]:focus,.filters select:focus{outline:2px solid var(--accent);outline-offset:0}
+.meta select,.meta input,.maptbl select{background:#EDF2F7;border:0;border-radius:6px}
+/* загрузка */
+.slot{padding:16px}
+.step.ok{background:var(--accent)}
+.drop{border:1.5px dashed #CBD5E0;border-radius:8px;background:#F7FAFC}
+.drop:hover{border-color:var(--accent);background:var(--accent-soft)}
+.drop svg,.drop u{color:var(--accent)}
+.stale{background:var(--warn-soft);color:var(--warn);border-radius:6px}
+.toast{border-radius:6px;background:#0B1F33}
+@media (max-width:900px){
+  .mh{gap:12px;padding:0 12px}
+  .mh-priv,.mh-crumb{display:none}
+  .rail{position:static;height:auto;top:auto;border-right:0;border-bottom:1px solid var(--line)}
+  .main{padding:16px 16px 48px}
+  .app.collapsed .rail{display:none}
+}
 </style>
 
 </head>
 <body>
+<header class="mh">
+  <button type="button" class="ib" data-act="rail" id="rail-toggle" aria-expanded="true" aria-controls="nav" aria-label="Свернуть меню" title="Свернуть меню"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg></button>
+  <div class="mh-brand"><span class="mh-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19l7-7"/></svg></span><span class="mh-name">Сверка НВОС</span></div>
+  <nav class="mh-crumb" aria-label="Путь"><span id="mh-page"></span></nav>
+  <div class="mh-sp"></div>
+  <span class="mh-priv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Файлы обрабатываются в браузере</span>
+  <span class="mh-av" aria-hidden="true">ДП</span>
+</header>
 <div class="app">
 <nav class="rail" aria-label="Разделы">
-  <div class="rail-top"><div class="brand"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19l7-7"/></svg></span><span class="brand-t"><b>Сверка НВОС</b><small>ДПиООС</small></span></div>
-    <button type="button" class="rail-toggle" data-act="rail" id="rail-toggle" aria-expanded="true" aria-controls="nav" aria-label="Свернуть панель" title="Свернуть панель"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path d="M15 10l-2 2 2 2"/></svg></button></div>
   <ul class="nav" id="nav"></ul>
   <div class="rail-card">
     <div class="params" id="params"></div>
     <button class="btn primary" data-act="run" id="btn-run">Запустить проверку</button>
     <span class="rail-note" id="rail-note">Проверка ещё не запускалась</span>
   </div>
-  <div class="rail-priv"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Файлы обрабатываются в браузере и никуда не отправляются</div>
 </nav>
 <main class="main" id="main">
   <header class="topbar" id="topbar"></header>
@@ -1367,7 +1524,7 @@ const RUN_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
 function applyRail() {
   const c = !!state.railCollapsed, app = $('.app'); if (!app) return;
   app.classList.toggle('collapsed', c);
-  const t = $('#rail-toggle'); if (t) { t.setAttribute('aria-expanded', String(!c)); const l = c ? 'Развернуть панель' : 'Свернуть панель'; t.setAttribute('aria-label', l); t.title = l; }
+  const t = $('#rail-toggle'); if (t) { t.setAttribute('aria-expanded', String(!c)); const l = c ? 'Развернуть меню' : 'Свернуть меню'; t.setAttribute('aria-label', l); t.title = l; }
 }
 try { const v = localStorage.getItem('sverka-rail'); state.railCollapsed = v == null ? innerWidth < 1200 : v === '1'; } catch (e) { state.railCollapsed = innerWidth < 1200; }
 /* боковое меню */
@@ -1397,6 +1554,8 @@ function renderTopbar() {
     decl: ['Декларация', `Отчётный год ${Y}`],
     nodecl: ['Без декларации', `Объекты, ИНН которых нет ни в одной декларации за ${Y}`] };
   const [t, sub] = titles[p] || titles.docs;
+  const crumb = { docs: 'Документы', summary: 'Сводка', decls: 'Декларации', decl: 'Декларации', nodecl: 'Без декларации' }[p] || '';
+  const mp = $('#mh-page'); if (mp) mp.textContent = crumb;
   const showSearch = R && p !== 'docs';
   $('#topbar').innerHTML = `<div class="tt">${p === 'decl' ? '<button class="btn ghost small" data-act="back" style="margin-left:-10px">← Назад</button>' : ''}<h1>${esc(t)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
     ${showSearch ? `<form class="gsearch" id="g-form" role="search" autocomplete="off">${SEARCH_ICON}<label for="g-q" class="sr">Найти декларацию по номеру, ИНН или организации</label><input id="g-q" type="search" autocomplete="off" spellcheck="false" placeholder="№ декларации, ИНН, организация…" value="${esc(state.listQ)}" aria-controls="g-res" aria-expanded="false"><button type="submit" class="gs-btn">Найти</button><div class="g-res" id="g-res" hidden></div></form>` : ''}
