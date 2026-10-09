@@ -657,6 +657,11 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .ftbl tr.warning td.sev::before{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:8px;height:7px;background:var(--warn-fill)}
 .cnt-w::before,.pill.warnp::before{content:"";display:inline-block;width:7px;height:6px;margin-right:4px;vertical-align:1px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)}
 .prob .bar i.w{background:var(--warn-fill)}
+/* v45: шесть карточек загрузки — 3 в ряд */
+.slots{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1000px){.slots{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.slots{grid-template-columns:1fr}}
+.slot-t b{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 /* v44: разделение на источники выбросов и сбросов */
 .impbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding-top:12px;border-top:1px solid var(--line)}
 .impbar-l{font-size:13px;color:var(--muted)}
@@ -797,10 +802,18 @@ const DOC_TYPES = {
     fld('category',  'Категория объекта', ['категория объекта']),
     fld('zvCode',    'Код загрязняющего вещества', ['код загрязняющ', 'код зв', 'код вещества']),
     fld('zvName',    'Загрязняющее вещество', ['загрязняющее вещество', 'наименование зв', 'наименование вещества']),
-    fld('mass',      'Фактический выброс, т/год (W)', ['т/год', 'тонн/год', 'тонн в год'], false, 22),
+    fld('mass',      'Фактический выброс/сброс, т/год (W)', ['т/год', 'тонн/год', 'тонн в год'], false, 22),
     fld('sourceNo',  'Номер источника (S)', ['номер источника'], false, 18),
   ] },   /* ПЭК: проверяется только наличие отчёта за год; вещества и массы показываются справочно и не сверяются */
 };
+/* отдельные карточки загрузки: ДПНВОС и ПЭК — выбросы и сбросы разными файлами; реестр ОНВОС и ДВОС — общие.
+   В сверке файлы выбросов и сбросов объединяются, у каждой строки остаётся пометка _imp (air / water). */
+for (const [b, imp, suf] of [['DPNVOS', 'air', 'A'], ['DPNVOS', 'water', 'W'], ['PEK', 'air', 'A'], ['PEK', 'water', 'W']])
+  DOC_TYPES[b + '_' + suf] = { ...DOC_TYPES[b], base: b, imp, sub: imp === 'air' ? 'выбросы' : 'сбросы' };
+const baseOf = d => DOC_TYPES[d].base || d;
+const slotsOfBase = b => DOCS.filter(d => baseOf(d) === b);
+const recsOfBase = b => slotsOfBase(b).flatMap(d => slotOf(d)?.records || []);
+const fileTitle = d => DOC_TYPES[d].short + (DOC_TYPES[d].sub ? ' · ' + DOC_TYPES[d].sub : '');
 const fieldLabel = (d, k) => DOC_TYPES[d].fields.find(f => f.key === k)?.label || k;
 const short = d => DOC_TYPES[d].short;
 
@@ -1151,7 +1164,8 @@ async function loadRows(docId, slot) {
   if (slot.req !== req) return;
   const n = rowNums.length, recs = new Array(n);
   const getters = colsData.map(col => col.c ? (i => col.c.uniq[col.c.idx[i]]) : (i => col[i]));
-  for (let i = 0; i < n; i++) { const r = { _row: rowNums[i] }; for (let k = 0; k < fields.length; k++) r[fields[k]] = getters[k](i); recs[i] = r; }
+  const imp = DOC_TYPES[docId].imp;
+  for (let i = 0; i < n; i++) { const r = { _row: rowNums[i] }; if (imp) r._imp = imp; for (let k = 0; k < fields.length; k++) r[fields[k]] = getters[k](i); recs[i] = r; }
   colsData = null;
   slot.records = recs; slot.loading = null;
   if (!slot.demo) dbPutCfg(docId, { name: slot.fileName, sheet: slot.sheet, headerRow: slot.headerRow, map: { ...slot.map } });
@@ -1170,7 +1184,7 @@ async function reHead(docId, slot) {
    Четыре файла загружаются один раз: ДПНВОС (выбросы и сбросы в одном файле), реестр ОНВОС, ДВОС, ПЭК.
    Сверка идёт сразу по всем категориям, результат смотрится в разрезе декларации.
    ===================================================================== */
-const DOCS = ['DPNVOS', 'ONVOS', 'DVOS', 'PEK'];
+const DOCS = ['ONVOS', 'DPNVOS_A', 'DPNVOS_W', 'DVOS', 'PEK_A', 'PEK_W'];
 const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', imp: 'all', listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
 const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001, decl: '' };
 const slotOf = d => state.pool[d];
@@ -1179,13 +1193,13 @@ function touchDoc() { if (state.result) state.stale = true; }
 const staleAll = touchDoc;
 function yearsAvailable() {
   const ys = new Set();
-  for (const d of ['DPNVOS', 'DVOS', 'PEK']) { const s = slotOf(d); if (s?.records && s.map.year != null) for (const r of s.records) { const y = yearOf(r.year); if (y && y > 1990 && y < 2100) ys.add(y); } }
+  for (const d of DOCS.filter(x => x !== 'ONVOS')) { const s = slotOf(d); if (s?.records && s.map.year != null) for (const r of s.records) { const y = yearOf(r.year); if (y && y > 1990 && y < 2100) ys.add(y); } }
   return ys;
 }
 function autoYear() {
   if (!SETTINGS.yearAuto) return;
-  const s = slotOf('DPNVOS'); if (!s?.records || s.map.year == null) return;
-  let max = 0; for (const r of s.records) { const y = yearOf(r.year); if (y && y < 2100 && y > max) max = y; }
+  const ss = slotsOfBase('DPNVOS').map(slotOf).filter(s => s?.records && s.map.year != null); if (!ss.length) return;
+  let max = 0; for (const r of ss.flatMap(s => s.records)) { const y = yearOf(r.year); if (y && y < 2100 && y > max) max = y; }
   if (max) SETTINGS.year = max;
 }
 
@@ -1203,13 +1217,33 @@ const CHECKS = {
 };
 const impOfText = v => { const s = String(v ?? '').toLowerCase(); return s.includes('сброс') ? 'water' : s.includes('выброс') ? 'air' : ''; };
 
+/* выбросы и сбросы — отдельные файлы: по каждому виду берётся последний отчёт, вещества объединяются */
+function mergeZvE(t, e) {
+  t.mass += e.mass; t.hasMass ||= e.hasMass; t.massEmpty ||= e.massEmpty; t.over += e.over; t.vrv += e.vrv; t.total += e.total; t.hasTotal ||= e.hasTotal;
+  t.year += e.year; t.hasYear ||= e.hasYear; t.rows = t.rows.concat(e.rows); t.air ||= e.air; t.water ||= e.water;
+  if (e.src) { t.src = new Map(t.src || []); for (const [k, x] of e.src) { const y = t.src.get(k); t.src.set(k, !y ? x : { ...y, mass: y.mass + x.mass, hasMass: y.hasMass || x.hasMass, rows: y.rows.concat(x.rows), air: y.air || x.air, water: y.water || x.water }); } }
+}
+function mergeLatest(reports, latest) {
+  const byImp = new Map(); for (const R of reports.values()) { const g = byImp.get(R.imp || '') || byImp.set(R.imp || '', new Map()).get(R.imp || ''); g.set(R.no + '|' + g.size, R); }
+  const picks = [...byImp.values()].map(g => latest(g));
+  if (picks.length === 1) return picks[0];
+  const zv = new Map();
+  for (const R of picks) for (const [k, e] of R.zv) { const t = zv.get(k); if (!t) zv.set(k, { ...e, rows: [...e.rows] }); else mergeZvE(t, e); }
+  return { ...picks[0], no: [...new Set(picks.map(R => R.no))].join(', '), zv, merged: picks };
+}
+/* несколько отчётов одного вида за год */
+const dupReports = reports => { const c = {}; for (const R of reports.values()) (c[R.imp || ''] ||= new Set()).add(R.no); return Object.values(c).some(x => x.size > 1); };
+const repNos = reports => [...new Set([...reports.values()].map(r => r.no))];
 function analyze(S) {
   const Y = S.year, tol = S.tol, y0 = new Date(Y, 0, 1), y1 = new Date(Y, 11, 31, 23, 59, 59);
-  const D = {};
+  const D = {}, files = [];
   for (const d of DOCS) {
-    const s = slotOf(d); if (!s?.records) continue;
-    const rows = (d === 'DPNVOS' || d === 'PEK') && s.map.year != null ? s.records.filter(r => yearOf(r.year) === Y) : s.records;
-    D[d] = { map: s.map, rows, fileName: s.fileName, demo: !!s.demo, total: s.records.length };
+    const s = slotOf(d); if (!s?.records) { files.push({ doc: d, fileName: null, rows: 0 }); continue; }
+    const b = baseOf(d);
+    const rows = (b === 'DPNVOS' || b === 'PEK') && s.map.year != null ? s.records.filter(r => yearOf(r.year) === Y) : s.records;
+    files.push({ doc: d, fileName: s.fileName, rows: rows.length, demo: !!s.demo });
+    const X = D[b] ||= { map: s.map, rows: [], fileName: s.fileName, demo: !!s.demo, total: 0 };
+    X.rows = X.rows.length ? X.rows.concat(rows) : rows; X.total += s.records.length;
   }
   const objs = new Map(), onByCode = new Map();
   const keyOf = r => normCode(r.objectCode) + '|' + normInn(r.inn);
@@ -1261,12 +1295,13 @@ function analyze(S) {
       if (!norm(r.objectCode)) continue;
       const o = get(r);
       if (!o.dp) o.dp = { cat: catNorm(r.category), reports: new Map() };
-      const k = norm(r.reportNo);
+      const imp = r._imp || (D.DPNVOS.map.section != null ? impOfText(r.section) : '');
+      const k = norm(r.reportNo) + '|' + imp;
       let R = o.dp.reports.get(k);
-      if (!R) o.dp.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), status: r.status, zv: new Map(), firstRow: r._row, year: yearOf(r.year) });
-      addZv(R.zv, r, o, 'DPNVOS', D.DPNVOS.map.section != null ? impOfText(r.section) : '');
+      if (!R) o.dp.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), status: r.status, zv: new Map(), firstRow: r._row, year: yearOf(r.year), imp });
+      addZv(R.zv, r, o, 'DPNVOS', imp);
     }
-    for (const o of objs.values()) if (o.dp) o.dp.rep = latest(o.dp.reports);
+    for (const o of objs.values()) if (o.dp) o.dp.rep = latest(o.dp.reports);   // уточняется ниже, после правки кодов
   }
   if (D.DVOS) {
     for (const r of D.DVOS.rows) {
@@ -1293,12 +1328,13 @@ function analyze(S) {
       if (!norm(r.objectCode)) continue;
       const o = get(r);
       if (!o.pk) o.pk = { reports: new Map(), cat: catNorm(r.category) };
-      const k = norm(r.reportNo);
+      const imp = r._imp || '';
+      const k = norm(r.reportNo) + '|' + imp;
       let R = o.pk.reports.get(k);
-      if (!R) o.pk.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), zv: new Map(), firstRow: r._row });
-      addZv(R.zv, r, o, 'PEK', '');
+      if (!R) o.pk.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), zv: new Map(), firstRow: r._row, imp });
+      addZv(R.zv, r, o, 'PEK', imp);
     }
-    for (const o of objs.values()) if (o.pk) o.pk.rep = latest(o.pk.reports);
+    for (const o of objs.values()) if (o.pk) o.pk.rep = mergeLatest(o.pk.reports, latest);
   }
   /* ноль в конце кода вещества в ДПНВОС: 15190 ↔ 1519, 03850 ↔ 0385 */
   for (const o of objs.values()) if (o.dp) {
@@ -1314,6 +1350,7 @@ function analyze(S) {
       else R.zv.set(k2, { ...e, dpCode: e.code });
     }
   }
+  for (const o of objs.values()) if (o.dp) o.dp.rep = mergeLatest(o.dp.reports, latest);
   /* категория, активность, привязка к декларациям */
   const isActive = on => !(on.dateIn && on.dateIn > y1) && !(on.dateOut && on.dateOut < y0);
   const innReports = new Map(), declInfo = new Map();
@@ -1363,7 +1400,7 @@ function analyze(S) {
   const hazard = {}; for (const [z, st] of hz) hazard[z] = [...st].sort().join(', ');
   HAZ = hazard;
   return { at: new Date(), settings: { ...S, decl: undefined }, findings, lines, objects, decls, hazard,
-    files: DOCS.map(d => ({ doc: d, fileName: D[d]?.fileName || null, rows: D[d]?.rows.length || 0, demo: !!D[d]?.demo })) };
+    files };
 }
 
 function f(o, n, extra) { return { objKey: o.key, objectCode: o.code, inn: o.inn, objectName: o.name, cat: o.cat, ruleId: `${o.cat === '—' ? 'X' : o.cat}-${n}`, check: n, ...extra }; }
@@ -1394,8 +1431,7 @@ function valsOf(o, P, z) {
   }
   /* ПЭК — справочно (не участвует в сверке): берётся отчёт ПЭК объекта за год */
   if (!o.pk) v.PEK = o.cat === 'III' ? { t: 'miss' } : { t: 'na' };
-  else if (waterOnly(P, z)) v.PEK = { t: 'na' };
-  else { const e = o.pk.rep.zv.get(z); v.PEK = !e ? { t: 'miss' } : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass }; }
+  else { const e = o.pk.rep.zv.get(z); v.PEK = !e ? (waterOnly(P, z) && !slotOf('PEK_W')?.records ? { t: 'na' } : { t: 'miss' }) : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass }; }
   const on = has('ONVOS');
   if (o.cat !== 'III' || !on) v.ONVOS_P = { t: 'na' };
   else { const e = on[1].get(z); v.ONVOS_P = !e ? { t: 'miss' } : e.hasPower ? { t: 'num', n: e.power } : { t: 'empty' }; }
@@ -1410,7 +1446,7 @@ function srcRowsOf(o, P, z, tol) {
   if (!hasSrc(on) && !hasSrc(dv) && !hasSrc(pk)) return null;
   const keys = [...new Set([on, dv, pk].flatMap(e => e?.src ? [...e.src.keys()] : []))].sort(srcCmp);
   const wOnly = waterOnly(P, z);   // сбросы не требуются в ДВОС / ПЭК
-  const cell = (doc, e, k, val) => { if (!g(doc) || (wOnly && (doc === 'DVOS' || doc === 'PEK'))) return { t: 'na' }; if (!e) return { t: 'miss' }; if (!e.src) return { t: 'na' }; const x = e.src.get(k); return !x ? { t: 'miss' } : val(x); };
+  const cell = (doc, e, k, val) => { if (!g(doc) || (wOnly && (doc === 'DVOS' || (doc === 'PEK' && !slotOf('PEK_W')?.records)))) return { t: 'na' }; if (!e) return { t: 'miss' }; if (!e.src) return { t: 'na' }; const x = e.src.get(k); return !x ? { t: 'miss' } : val(x); };
   return keys.map(k => {
     const a = on?.src?.get(k), b = dv?.src?.get(k), c = pk?.src?.get(k);
     const vals = { DPNVOS: { t: 'na' },
@@ -1445,7 +1481,7 @@ function checkObject(o, M) {
   }
   if (o.dp) {
     if (!norm(o.dp.rep.no)) out.push(f(o, '01', { severity: 'error', doc: 'DPNVOS', row: o.dp.rep.firstRow, kind: 'Пусто', message: 'Номер отчёта ДПНВОС пусто' }));
-    if (o.dp.reports.size > 1) out.push(f(o, '01', { severity: 'warning', doc: 'DPNVOS', message: `Несколько отчётов ДПНВОС за ${Y}: № ${[...o.dp.reports.values()].map(r => r.no).join(', ')}; в сверке используется № ${o.dp.rep.no}` }));
+    if (dupReports(o.dp.reports)) out.push(f(o, '01', { severity: 'warning', doc: 'DPNVOS', message: `Несколько отчётов ДПНВОС за ${Y}: № ${repNos(o.dp.reports).join(', ')}; в сверке используется № ${o.dp.rep.no}` }));
   }
   /* 02 — реестр */
   if (!o.on) {
@@ -1472,7 +1508,7 @@ function checkObject(o, M) {
   if (cat === 'III') {
     if (!o.pk) out.push(excludedInYear ? f(o, '03', { severity: 'warning', kind: 'Нет ПЭК', doc: 'ONVOS', message: `Отчёта ПЭК за ${Y} нет; объект исключён из реестра ${fmtDate(o.on.dateOut)}` })
                                        : f(o, '03', { severity: 'error', kind: 'Нет ПЭК', doc: o.on ? 'ONVOS' : 'DPNVOS', message: `Отчёт ПЭК за ${Y} по объекту не найден` }));
-    else if (o.pk.reports.size > 1) out.push(f(o, '03', { severity: 'warning', doc: 'PEK', row: o.pk.rep.firstRow, message: `Несколько отчётов ПЭК за ${Y}: № ${[...o.pk.reports.values()].map(r => r.no).join(', ')}; в сверке используется № ${o.pk.rep.no}` }));
+    else if (dupReports(o.pk.reports)) out.push(f(o, '03', { severity: 'warning', doc: 'PEK', row: o.pk.rep.firstRow, message: `Несколько отчётов ПЭК за ${Y}: № ${repNos(o.pk.reports).join(', ')}; в сверке используется № ${o.pk.rep.no}` }));
   }
   /* 04 — состав веществ */
   for (const [d, e] of Object.entries(o.empty)) if (d !== 'PEK') for (const row of e.slice(0, 50))
@@ -1595,7 +1631,7 @@ function summarizeObjects(M, findings) {
     else if (o.cat === 'III') third = o.pk ? ['ok', 'ПЭК есть'] : ['fail', 'нет ПЭК'];
     else if (o.cat === 'IV') third = M.innHas13.get(o.inn) ? ['warnp', 'IV обязательна'] : ['skip', 'IV не обязательна'];
     return { key: o.key, code: o.code, inn: o.inn, name: o.name, org: o.org, cat: o.cat, decls: o.decls, inReg: !!o.on, regCat: o.on?.cat || '', dateOut: o.on?.dateOut || null, dateUpd: o.on?.dateUpd || null,
-      dpNo: o.dp ? [...o.dp.reports.values()].map(r => r.no).join(', ') : '', third, dvNo: o.dv?.rep.no || '', dvDate: o.dv?.rep.date || null, dvUntil: o.dv?.rep.until || null, pkNo: o.pk?.rep.no || '',
+      dpNo: o.dp ? repNos(o.dp.reports).join(', ') : '', third, dvNo: o.dv?.rep.no || '', dvDate: o.dv?.rep.date || null, dvUntil: o.dv?.rep.until || null, pkNo: o.pk?.rep.no || '',
       zv: { DPNVOS: o.dp ? o.dp.rep.zv.size : null, ONVOS: o.on ? o.on.zv.size : null, DVOS: o.dv ? o.dv.rep.zv.size : null, PEK: o.pk ? o.pk.rep.zv.size : null },
       hasPek: !!o.pk, errors: c.e, warnings: c.w, tot: totalsOf(o) };
   });
@@ -1611,7 +1647,8 @@ const ICON = {
   upload: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
   file: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13l2 2 4-4"/></svg>',
 };
-const SHARED = { DPNVOS: 'Выбросы и сбросы, все категории в одном файле', ONVOS: 'Весь реестр — объекты всех категорий', DVOS: 'Нужна для объектов II категории', PEK: 'Для III категории — проверяется наличие отчёта за год; вещества и т/год показываются справочно' };
+const SHARED = { ONVOS: 'Весь реестр — объекты всех категорий, источники выбросов и сбросов', DPNVOS_A: 'Раздел «выбросы», все категории', DPNVOS_W: 'Раздел «сбросы», все категории', DVOS: 'Общая — выбросы и сбросы; нужна для объектов II категории',
+  PEK_A: 'Выбросы, III категория — наличие отчёта за год; вещества и т/год справочно', PEK_W: 'Сбросы, III категория — наличие отчёта за год; вещества и т/год справочно' };
 function renderRunState() {
   const loading = DOCS.some(d => slotOf(d)?.loading);
   const rb = $('#btn-run'), rl = loading ? 'Файлы загружаются…' : state.result ? 'Проверить заново' : 'Запустить проверку';
@@ -1641,7 +1678,7 @@ function renderNav() {
   const R = state.result, noDecl = R ? R.objects.filter(o => !o.decls.length).length : null;
   const cur = id => (state.page === id || (id === 'decls' && state.page === 'decl')) ? 'aria-current="page"' : '';
   const item = (id, label, extra, dis) => `<li><button type="button" data-act="nav" data-id="${id}" ${cur(id)} ${dis ? 'disabled title="Сначала запустите проверку"' : `title="${label}"`}>${NAV_ICON[id]}<span class="nl">${label}</span>${extra || ''}</button></li>`;
-  const dots = `<span class="dots" aria-label="Загружено файлов: ${DOCS.filter(d => slotState(d) === 'ok').length} из 4">${DOCS.map(d => `<i class="${slotState(d)}"></i>`).join('')}</span>`;
+  const dots = `<span class="dots" aria-label="Загружено файлов: ${DOCS.filter(d => slotState(d) === 'ok').length} из ${DOCS.length}">${DOCS.map(d => `<i class="${slotState(d)}"></i>`).join('')}</span>`;
   el.innerHTML = item('summary', 'Сводка', '', !R) + item('decls', 'Декларации', R ? `<span class="cnt">${R.decls.length.toLocaleString('ru-RU')}</span>` : '', !R)
     + item('nodecl', 'Без декларации', R ? `<span class="cnt">${noDecl.toLocaleString('ru-RU')}</span>` : '', !R) + item('docs', 'Документы', dots);
 }
@@ -1649,7 +1686,7 @@ const SEARCH_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
 const DL_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 20h14"/></svg>';
 function renderTopbar() {
   const R = state.result, Y = R ? R.settings.year : SETTINGS.year, p = state.page;
-  const titles = { docs: ['Документы', 'ДПНВОС (выбросы и сбросы) · реестр ОНВОС · ДВОС · ПЭК'],
+  const titles = { docs: ['Документы', 'Реестр ОНВОС · ДПНВОС: выбросы и сбросы · ДВОС · ПЭК: выбросы и сбросы'],
     summary: [`Сводка за ${Y} год`, R ? `${R.decls.length.toLocaleString('ru-RU')} деклараций · ${R.objects.length.toLocaleString('ru-RU')} объектов` : ''],
     decls: ['Декларации', R ? `Отчётный год ${Y} · нажмите на декларацию, чтобы открыть её` : ''],
     decl: ['Декларация', `Отчётный год ${Y}`],
@@ -1674,7 +1711,8 @@ function renderParams() {
   const st = SETTINGS, ys = yearsAvailable(), now = new Date().getFullYear();
   for (let y = now - 7; y <= now; y++) ys.add(y); ys.add(st.year);
   const list = [...ys].sort((a, b) => b - a);
-  const dpY = slotOf('DPNVOS')?.records && slotOf('DPNVOS').map.year != null ? [...new Set(slotOf('DPNVOS').records.map(r => yearOf(r.year)).filter(Boolean))].sort() : [];
+  const dpS = slotsOfBase('DPNVOS').map(slotOf).filter(x => x?.records && x.map.year != null);
+  const dpY = dpS.length ? [...new Set(dpS.flatMap(x => x.records).map(r => yearOf(r.year)).filter(Boolean))].sort() : [];
   $('#params').innerHTML = `
     <label class="pf" for="p-year" title="Год задаёт строки ДПНВОС и ПЭК, проверку 7-летнего срока ДВОС и исключения из реестра">Отчётный год
       <select id="p-year">${list.map(y => `<option value="${y}" ${y === st.year ? 'selected' : ''}>${y}${dpY.includes(y) ? ' · есть' : ''}</option>`).join('')}</select></label>
@@ -1699,9 +1737,10 @@ function slotHTML(d, s, idx) {
   else if (s.error) st = ['bad', 'Ошибка'];
   else if (s.loading || !s.headers) st = ['load', 'Чтение…'];
   else { const miss = t.fields.filter(x => x.required && s.map[x.key] == null).length;
-    st = miss ? ['bad', `Нет столбцов: ${miss}`] : ['ok', `${(s.records?.length || 0).toLocaleString('ru-RU')} строк`]; }
+    const n = s.records?.length || 0, n10 = n % 10, n100 = n % 100;
+    st = miss ? ['bad', `Нет столбцов: ${miss}`] : ['ok', `${n.toLocaleString('ru-RU')} ${n10 === 1 && n100 !== 11 ? 'строка' : n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20) ? 'строки' : 'строк'}`]; }
   const head = `<div class="slot-h"><span class="step ${st[0]}">${st[0] === 'ok' ? ICON.check : idx}</span>
-    <div class="slot-t"><b>${t.short}</b><small>${t.title}</small></div><span class="chip ${st[0]}">${st[1]}</span></div>`;
+    <div class="slot-t"><b>${t.short}${t.imp ? ' ' + impTag(t.imp) : ''}</b><small>${t.title}</small></div><span class="chip ${st[0]}">${st[1]}</span></div>`;
   const sharedNote = `<div class="shared">${SHARED[d]}</div>`;
   if (!s) return `<article class="slot" data-doc="${d}">${head}
       <label class="drop" for="${fid}">${ICON.upload}<span>Перетащите файл или <u>выберите</u></span><small>.xlsx, .xls, .csv</small></label>${fileInput(fid, d)}${sharedNote}</article>`;
@@ -1938,7 +1977,7 @@ function renderSummary(R) {
   if (state.rule && !RS.list.some(r => r.id === state.rule)) state.rule = '';
   const ws = wsFiltered(R);
   if (!SETTINGS.decl || SETTINGS.decl === '__none__' || !ws.some(d => d.no === SETTINGS.decl)) { SETTINGS.decl = ws[0]?.no || ''; state.cat = 'all'; state.imp = 'all'; }
-  const docState = DOCS.map(d => `<li><span class="${slotState(d) === 'ok' ? 'y' : 'n'}" aria-hidden="true">${slotState(d) === 'ok' ? '✓' : '✗'}</span>${short(d)}<span class="sr">${slotState(d) === 'ok' ? ' загружен' : ' не загружен'}</span></li>`).join('');
+  const docState = DOCS.map(d => `<li><span class="${slotState(d) === 'ok' ? 'y' : 'n'}" aria-hidden="true">${slotState(d) === 'ok' ? '✓' : '✗'}</span>${fileTitle(d)}<span class="sr">${slotState(d) === 'ok' ? ' загружен' : ' не загружен'}</span></li>`).join('');
   const { html } = wsItemsHTML(R);
   $('#report').innerHTML = `<div class="report" style="gap:20px">
     <section class="kpis" aria-label="Итоги">
@@ -2097,7 +2136,7 @@ function renderAllBase() { renderParams(); renderDeclBar(); renderSlots(); rende
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 3500); }
 
 function runNow(after) {
-  if (!slotOf('DPNVOS')?.records && !slotOf('ONVOS')?.records) { toast('Загрузите хотя бы ДПНВОС и реестр ОНВОС'); return; }
+  if (!recsOfBase('DPNVOS').length && !slotOf('ONVOS')?.records) { toast('Загрузите хотя бы ДПНВОС и реестр ОНВОС'); return; }
   const btn = $('#btn-run'); btn.disabled = true; btn.classList.add('running'); btn.innerHTML = RUN_ICON + '<span class="lbl">Проверяю…</span>'; btn.title = 'Проверяю…';
   setTimeout(() => {
     try { state.result = analyze(SETTINGS); state.stale = false; if (state.page === 'docs') state.page = 'summary'; META.ran = true; saveMeta(); }
@@ -2108,8 +2147,8 @@ function runNow(after) {
 }
 function applyDecl(v) {
   v = String(v || '').trim(); SETTINGS.decl = v; state.cat = 'all'; state.imp = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {};
-  if (v && v !== '__none__' && slotOf('DPNVOS')?.records) {
-    const s = slotOf('DPNVOS'), rows = s.records.filter(r => norm(r.reportNo) === norm(v));
+  if (v && v !== '__none__' && recsOfBase('DPNVOS').length) {
+    const rows = recsOfBase('DPNVOS').filter(r => norm(r.reportNo) === norm(v));
     if (!rows.length) { toast(`Декларация № ${v} не найдена в ДПНВОС`); renderDeclBar(); renderReport(); return; }
     const ys = [...new Set(rows.map(r => yearOf(r.year)).filter(Boolean))];
     if (ys.length === 1 && ys[0] !== SETTINGS.year) { SETTINGS.year = ys[0]; SETTINGS.yearAuto = false; state.stale = true; toast(`Отчётный год переключён на ${ys[0]} — год декларации`); renderParams(); }
@@ -2140,7 +2179,7 @@ function buildReportWorkbook(R, V) {
   sheet([['Отчёт о сверке документов НВОС'], [],
     ...(D ? [['Декларация (номер отчёта ДПНВОС)', D.no], ['Организация', D.orgs.join('; ')], ['ИНН', D.inns.join(', ')], ['Статус', D.statuses.join(', ')]] : V?.none ? [['Выборка', 'Объекты без декларации']] : [['Выборка', 'Все декларации']]),
     ['Отчётный год', R.settings.year], ['Допуск', R.settings.tol], ['Дата проверки', R.at.toLocaleString('ru-RU')], [],
-    ['Документ', 'Файл', 'Строк в сверке'], ...R.files.map(x => [short(x.doc) + ' — ' + DOC_TYPES[x.doc].title, x.fileName ? x.fileName + (x.demo ? ' (пример)' : '') : 'не загружен', x.rows]), [],
+    ['Документ', 'Файл', 'Строк в сверке'], ...R.files.map(x => [fileTitle(x.doc) + ' — ' + DOC_TYPES[x.doc].title, x.fileName ? x.fileName + (x.demo ? ' (пример)' : '') : 'не загружен', x.rows]), [],
     ['Категория', 'Объектов', 'Ошибок', 'Предупреждений'], ...CATS.filter(c => byCat(c).length).map(c => [c, byCat(c).length, byCat(c).reduce((a, o) => a + o.errors, 0), byCat(c).reduce((a, o) => a + o.warnings, 0)]),
     ['Итого', objs.length, fnd.filter(x => x.severity === 'error').length, fnd.filter(x => x.severity === 'warning').length], [],
     ['Веществ прошли все проверки', lines.filter(l => l.status === 'ok').length], ['Веществ с ошибками', lines.filter(l => l.status === 'bad').length],
@@ -2159,7 +2198,7 @@ function buildReportWorkbook(R, V) {
   sheet([['№', 'Уровень', 'Проверка', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Воздействие', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Тип', 'Описание', 'Документ', 'Строка в файле'],
     ...fnd.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.cat, x.objectCode || '', x.inn || '', x.objectName || '', x.zvKey ? IMP_TXT[limp.get(x.objKey + '|' + x.zvKey)] || '' : '', x.zvCode || '', hazOf(x.zvKey), x.zvName || '', ...VCOLS.map(c => vText(x.vals?.[c[0]])), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
     [6, 15, 9, 8, 19, 13, 36, 14, 9, 10, 36, ...VCOLS.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
-  const rowsTxt = l => DOCS.filter(d => l.rows[d]).map(d => `${short(d)}: ${l.rows[d].slice(0, 10).join(', ')}${l.rows[d].length > 10 ? '…' : ''}`).join('; ');
+  const rowsTxt = l => ['DPNVOS', 'ONVOS', 'DVOS', 'PEK'].filter(d => l.rows[d]).map(d => `${short(d)}: ${l.rows[d].slice(0, 10).join(', ')}${l.rows[d].length > 10 ? '…' : ''}`).join('; ');
   const head = ['Результат', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Воздействие', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Комментарий', 'Строки в файлах'];
   const toRow = l => [LINE[l.status][1], l.cat, l.code, l.inn, l.name, IMP_TXT[l.imp] || '', l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.map(c => vText(l.vals[c[0]])), l.note, rowsTxt(l)];
   const w = [26, 8, 19, 13, 36, 14, 9, 10, 40, ...VCOLS.map(() => 13), 50, 40];
@@ -2215,17 +2254,20 @@ function demoData() {
   const pek = [['Номер отчёта', 'Год отчёта', 'ИНН', 'Код ОНВОС', 'Наименование объекта', 'Категория объекта', 'Код Загрязняющего вещества из 2.1', 'Загрязняющее вещество из 2.1', 'Фактический выброс', 'Номер источника', 'Фактический выброс, т/год'],
     [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0035', '0001', 0.055], [7400001, 2025, E[1], E[0], E[2], 3, '0337', 'Углерод оксид', '0.0015', '0002', 0.03],
     [7400001, 2025, E[1], E[0], E[2], 3, '0301', 'Азота диоксид', '0.001', '0001', 0.028]];
-  return { DPNVOS: dp, ONVOS: on, DVOS: dv, PEK: pek };
+  /* сбросы — отдельным файлом с заголовками «Фактический сброс…» */
+  const dpw = [dp[0].map(h => h.replace('выброс', 'сброс').replace('НДВ', 'НДС')), ...dp.slice(1).filter(r => r[8] === 'Взвешенные вещества')];
+  return { DPNVOS_A: dp.filter(r => r[8] !== 'Взвешенные вещества'), DPNVOS_W: dpw, ONVOS: on, DVOS: dv, PEK_A: pek };
 }
 function loadDemo() {
   const data = demoData();
   for (const d of DOCS) {
     if (state.pool[d]?.worker) state.pool[d].worker.terminate();
+    if (!data[d]) { delete state.pool[d]; continue; }
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data[d]), 'Sheet1');
-    const s = { fileName: `пример_${short(d)}.xlsx`, demo: true, kind: 'sheetjs', wb, sheets: wb.SheetNames, sheet: 0, ui: {} };
+    const s = { fileName: `пример_${fileTitle(d).replace(' · ', '_')}.xlsx`, demo: true, kind: 'sheetjs', wb, sheets: wb.SheetNames, sheet: 0, ui: {} };
     sheetjsLoad(s); s.headerRow = detectHeaderRow(s.preview); s.headers = headersOf(s); s.map = automap(d, s.headers);
     const fields = Object.keys(s.map), recs = [];
-    for (let i = s.headerRow + 1; i < s.aoa.length; i++) { const raw = s.aoa[i] || []; if (!raw.some(v => v !== '')) continue; const r = { _row: i + 1 }; for (const k of fields) r[k] = raw[s.map[k]]; recs.push(r); }
+    for (let i = s.headerRow + 1; i < s.aoa.length; i++) { const raw = s.aoa[i] || []; if (!raw.some(v => v !== '')) continue; const r = { _row: i + 1 }; if (DOC_TYPES[d].imp) r._imp = DOC_TYPES[d].imp; for (const k of fields) r[k] = raw[s.map[k]]; recs.push(r); }
     s.records = recs; state.pool[d] = s;
   }
   touchDoc(); SETTINGS.yearAuto = true; autoYear();
@@ -2286,6 +2328,10 @@ async function restoreSaved() {
   const m = meta?.settings;
   if (m) { if (m.year) SETTINGS.year = m.year; SETTINGS.yearAuto = m.yearAuto !== false; if (m.tol != null) SETTINGS.tol = m.tol; META.ran = !!m.ran; }
   const C = cfg || {}, F = files || {};
+  /* до версии 45 ДПНВОС и ПЭК были одним файлом — переносим их в карточки «выбросы» */
+  for (const [o, n] of [['DPNVOS', 'DPNVOS_A'], ['PEK', 'PEK_A']]) if ((F[o] || C[o]) && !F[n] && !C[n]) {
+    if (F[o]) { F[n] = F[o]; dbPutFile(n, F[o]); } if (C[o]) { C[n] = C[o]; dbPutCfg(n, C[o]); } delete F[o]; delete C[o]; dbDelDoc(o);
+  }
   const docs = DOCS.filter(x => C[x]?.demo || F[x]);
   if (!docs.length) { if (m) renderParams(); return; }
   if (docs.some(x => C[x]?.demo)) { loadDemo(); for (const x of DOCS) if (!C[x]?.demo) delete state.pool[x]; }
