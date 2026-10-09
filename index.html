@@ -657,6 +657,19 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .ftbl tr.warning td.sev::before{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:8px;height:7px;background:var(--warn-fill)}
 .cnt-w::before,.pill.warnp::before{content:"";display:inline-block;width:7px;height:6px;margin-right:4px;vertical-align:1px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)}
 .prob .bar i.w{background:var(--warn-fill)}
+/* v44: разделение на источники выбросов и сбросов */
+.impbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding-top:12px;border-top:1px solid var(--line)}
+.impbar-l{font-size:13px;color:var(--muted)}
+.segm.imps{flex-wrap:wrap}
+.segm.imps button{display:inline-flex;align-items:center;gap:6px}
+.segm.imps button small{font-weight:400;font-size:12px;color:var(--muted)}
+.segm.imps button[aria-pressed="true"] small{color:var(--accent-text)}
+.imp{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:500;padding:0 6px 0 4px;border-radius:4px;line-height:18px;white-space:nowrap;vertical-align:1px}
+.imp svg{width:12px;height:12px}
+.imp-air{background:#EDF2F7;color:#2D3748}
+.imp-water{background:#E6F0FF;color:#0D4CD3}
+.ftbl tr.grp-water td{background:#F0F6FF}
+.ftbl tr.grp td svg{vertical-align:-2px}
 /* v42: файлы сохраняются в браузере */
 .keep-note{color:var(--muted)}
 .chip.saved{background:var(--accent-soft);color:var(--accent-text)}
@@ -1158,7 +1171,7 @@ async function reHead(docId, slot) {
    Сверка идёт сразу по всем категориям, результат смотрится в разрезе декларации.
    ===================================================================== */
 const DOCS = ['DPNVOS', 'ONVOS', 'DVOS', 'PEK'];
-const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
+const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', imp: 'all', listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
 const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001, decl: '' };
 const slotOf = d => state.pool[d];
 const poolKey = d => d;
@@ -1226,7 +1239,8 @@ function analyze(S) {
     if (sk) {
       e.src ||= new Map();
       let x = e.src.get(sk);
-      if (!x) e.src.set(sk, x = { label: String(r.sourceNo).trim(), mass: 0, hasMass: false, massMax: null, power: null, rows: [] });
+      if (!x) e.src.set(sk, x = { label: String(r.sourceNo).trim(), mass: 0, hasMass: false, massMax: null, power: null, rows: [], air: false, water: false });
+      if (imp === 'water') x.water = true; else if (imp === 'air') x.air = true;
       if (m != null) { x.mass += m; x.hasMass = true; x.massMax = x.massMax == null ? m : Math.max(x.massMax, m); }
       if (pw != null) x.power = x.power == null ? pw : Math.max(x.power, pw);
       x.rows.push(r._row);
@@ -1406,9 +1420,14 @@ function srcRowsOf(o, P, z, tol) {
     let st = 'ok';
     if ((b && a && Math.abs(b.mass - a.mass) > tol) || (c && a && a.power != null && c.hasMass && c.massMax - a.power > tol)) st = 'bad';
     else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
-    return { src: (a || b || c).label, srcKey: k, vals, status: st };
+    const li = impOfZv(P, z);
+    return { src: (a || b || c).label, srcKey: k, vals, status: st, imp: impOfSrc(a, li === 'both' ? '' : li) };
   });
 }
+/* вид воздействия вещества: по типу источника в реестре (и разделу ДПНВОС, если сопоставлен) — air / water / both / '' (не определено) */
+const impOfZv = (P, z) => { let w = false, a = false; for (const [d, zv] of P) if (d === 'DPNVOS' || d === 'ONVOS') { const e = zv.get(z); if (e) { w ||= e.water; a ||= e.air; } } return w && a ? 'both' : w ? 'water' : a ? 'air' : ''; };
+const impOfSrc = (x, fallback) => x && (x.air || x.water) ? (x.air && x.water ? 'both' : x.water ? 'water' : 'air') : (fallback === 'both' ? '' : fallback);
+const IMP_TXT = { air: 'выброс', water: 'сброс', both: 'выброс и сброс', '': '' };
 const waterOnly = (P, z) => { let w = false, a = false; for (const [d, zv] of P) if (d === 'DPNVOS' || d === 'ONVOS') { const e = zv.get(z); if (e) { w ||= e.water; a ||= e.air; } } return w && !a; };
 
 function checkObject(o, M) {
@@ -1521,7 +1540,7 @@ function buildLines(M, findings) {
       const fs = zf.get(o.key + '|' + z), err = fs && fs.some(x => x.severity === 'error');
       const info = zvInfo(P, z), rows = {};
       for (const [d, zv] of P) { const e = zv.get(z); if (e) rows[d] = e.rows; }
-      lines.push({ objKey: o.key, code: o.code, inn: o.inn, name: o.name, cat: o.cat, decls: o.decls, zvKey: z, zvCode: info.zvCode, zvName: info.zvName, vals: valsOf(o, P, z), rows, srcs: srcRowsOf(o, P, z, M.tol),
+      lines.push({ objKey: o.key, code: o.code, inn: o.inn, name: o.name, cat: o.cat, decls: o.decls, zvKey: z, zvCode: info.zvCode, zvName: info.zvName, imp: impOfZv(P, z), vals: valsOf(o, P, z), rows, srcs: srcRowsOf(o, P, z, M.tol),
         status: err ? 'bad' : fs ? 'warn' : notes.length ? 'obj' : 'ok',
         note: fs ? [...new Set(fs.map(x => x.kind || x.message))].join('; ') : notes.length ? 'По объекту: ' + [...new Set(notes)].join('; ') : '' });
     }
@@ -1538,19 +1557,21 @@ function totalsOf(o) {
   const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : null, DVOS: e => e.hasMass ? e.mass : null, PEK: e => e.hasMass ? e.mass : null };
   const zv = new Map();
   for (const [d] of TCOLS) if (src[d]) for (const [z, e] of src[d]) {
-    let x = zv.get(z); if (!x) zv.set(z, x = { z, code: e.code, name: '', v: {} });
+    let x = zv.get(z); if (!x) zv.set(z, x = { z, code: e.code, name: '', v: {}, air: false, water: false });
     if (!x.name && e.name) x.name = e.name;
+    if (d === 'ONVOS' || d === 'DPNVOS') { x.air ||= e.air; x.water ||= e.water; }
     const n = val[d](e); x.v[d] = n == null ? (x.v[d] ?? 'empty') : (typeof x.v[d] === 'number' ? x.v[d] : 0) + n;
   }
   return { has: Object.fromEntries(TCOLS.map(([d]) => [d, !!src[d]])), pek: !!o.pk, zv: [...zv.values()] };
 }
 /* сводит «Общие данные» по набору объектов: итог + разбивка по веществам */
-function aggTotals(objs) {
+function aggTotals(objs, impF) {
   const sum = Object.fromEntries(TCOLS.map(([d]) => [d, null])), zv = new Map();
   for (const o of objs) {
     for (const x of o.tot.zv) {
-      let y = zv.get(x.z); if (!y) zv.set(x.z, y = { z: x.z, code: x.code, name: x.name, v: {}, objs: new Set() });
-      if (!y.name && x.name) y.name = x.name; y.objs.add(o.key);
+      if (impF && !impMatch(x.air && x.water ? 'both' : x.water ? 'water' : x.air ? 'air' : '', impF)) continue;
+      let y = zv.get(x.z); if (!y) zv.set(x.z, y = { z: x.z, code: x.code, name: x.name, v: {}, objs: new Set(), air: false, water: false });
+      if (!y.name && x.name) y.name = x.name; y.objs.add(o.key); y.air ||= x.air; y.water ||= x.water;
       for (const [d] of TCOLS) { const n = x.v[d]; if (n === undefined) continue;
         if (typeof n === 'number') { y.v[d] = (typeof y.v[d] === 'number' ? y.v[d] : 0) + n; sum[d] = (sum[d] || 0) + n; }
         else if (y.v[d] === undefined) y.v[d] = 'empty'; }
@@ -1558,7 +1579,7 @@ function aggTotals(objs) {
     for (const [d] of TCOLS) if (o.tot.has[d] && sum[d] == null) sum[d] = 0;
   }
   /* есть объекты III категории, но ни одного отчёта ПЭК за год — так и пишем */
-  if (sum.PEK == null && objs.some(o => o.cat === 'III')) sum.PEK = 'nopek';
+  if (sum.PEK == null && !impF && objs.some(o => o.cat === 'III')) sum.PEK = 'nopek';
   const list = [...zv.values()].sort((a, b) => String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
   return { sum, list, pek: objs.some(o => o.tot.pek), has: Object.fromEntries(TCOLS.map(([d]) => [d, objs.some(o => o.tot.has[d])])) };
 }
@@ -1644,7 +1665,7 @@ function renderTopbar() {
 }
 function goPage(p) {
   if (p !== 'docs' && !state.result) p = 'docs';
-  if (p === 'nodecl') { SETTINGS.decl = '__none__'; state.cat = 'all'; }
+  if (p === 'nodecl') { SETTINGS.decl = '__none__'; state.cat = 'all'; state.imp = 'all'; }
   else if (p === 'summary' && SETTINGS.decl === '__none__') SETTINGS.decl = '';
   if (p === 'decl' || p === 'nodecl') { if (state.page !== 'decl' && state.page !== 'nodecl') state.prevPage = state.page; }
   state.page = p; renderNav(); renderReport(); window.scrollTo({ top: 0 });
@@ -1781,6 +1802,27 @@ function renderReport() {
   if (!V) { state.page = 'decls'; renderTopbar(); return renderDeclList(R, ''); }
   renderDeclCard(box, R, V, '');
 }
+/* фильтр по виду воздействия внутри декларации: все / выбросы / сбросы / не определено */
+const impMatch = (imp, f) => !f || f === 'all' ? true : f === 'na' ? !imp : imp === f || (imp === 'both' && (f === 'air' || f === 'water'));
+function impStats(lines) {
+  const st = { air: { z: 0, s: new Set() }, water: { z: 0, s: new Set() }, '': { z: 0, s: new Set() } };
+  for (const l of lines) {
+    for (const k of l.imp === 'both' ? ['air', 'water'] : [l.imp]) st[k].z++;
+    if (l.srcs) for (const x of l.srcs) for (const k of x.imp === 'both' ? ['air', 'water'] : [x.imp]) st[k].s.add(l.objKey + '|' + x.srcKey);
+  }
+  return st;
+}
+const IMP_ICON = { air: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10l5 3V10l5 3V6h4v14z"/><path d="M15 6c0-2 2-2 2-4"/></svg>', water: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>' };
+const impTag = imp => imp === 'air' || imp === 'water' ? `<span class="imp imp-${imp}" title="Источник ${imp === 'air' ? 'выбросов' : 'сбросов'}">${IMP_ICON[imp]}${imp === 'air' ? 'выброс' : 'сброс'}</span>` : imp === 'both' ? `<span class="imp imp-air">${IMP_ICON.air}выброс</span> <span class="imp imp-water">${IMP_ICON.water}сброс</span>` : '';
+const nSrc = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'источник' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'источника' : 'источников'}`;
+const nZv = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'вещество' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'вещества' : 'веществ'}`;
+function impBar(lines) {
+  const st = impStats(lines);
+  if (!st.air.z && !st.water.z) return '';
+  if (state.imp !== 'all' && !st[state.imp === 'na' ? '' : state.imp]?.z) state.imp = 'all';
+  const btn = (id, label, x) => `<button type="button" data-act="imp" data-id="${id}" aria-pressed="${state.imp === id}">${IMP_ICON[id] || ''}${label}${x ? `<small>${x.s.size ? nSrc(x.s.size) + ' · ' : ''}${nZv(x.z)}</small>` : ''}</button>`;
+  return `<div class="impbar"><span class="impbar-l">Источники</span><div class="segm imps" role="group" aria-label="Вид воздействия">${btn('all', 'Все')}${st.air.z ? btn('air', 'Выбросы', st.air) : ''}${st.water.z ? btn('water', 'Сбросы', st.water) : ''}${st[''].z ? btn('na', 'Не определено', st['']) : ''}</div></div>`;
+}
 function renderDeclCard(box, R, V, stale) {
   if (V.notFound) { box.innerHTML = `<div class="report">${stale}<div class="decl-card bad">Декларация № ${esc(V.notFound)} не найдена в ДПНВОС за ${R.settings.year} год.</div></div>`; return; }
   const objs = R.objects.filter(o => V.keys.has(o.key));
@@ -1790,6 +1832,7 @@ function renderDeclCard(box, R, V, stale) {
   const fnd = R.findings.filter(x => V.keys.has(x.objKey) && inCat(x));
   const lines = R.lines.filter(l => V.keys.has(l.objKey) && inCat(l));
   const errs = fnd.filter(x => x.severity === 'error').length, D = V.decl;
+  const impHtml = impBar(lines);
   box.innerHTML = `<div class="report">
     ${stale}
     <div class="decl-card">
@@ -1801,6 +1844,7 @@ function renderDeclCard(box, R, V, stale) {
         <button class="catbox ${state.cat === 'all' ? 'on' : ''}" data-act="vcat" data-id="all"><b>Все</b><span>${objs.length} объектов</span><em><i class="e">${objs.reduce((a, o) => a + o.errors, 0)} ош.</i> · <i class="w">${objs.reduce((a, o) => a + o.warnings, 0)} пред.</i></em></button>
         ${CATS.filter(c => cats[c]).map(c => `<button class="catbox ${state.cat === c ? 'on' : ''}" data-act="vcat" data-id="${c}"><b>${c === '—' ? 'Без категории' : c + ' категория'}</b><span>${cats[c].n} объектов</span><em><i class="e">${cats[c].e} ош.</i> · <i class="w">${cats[c].w} пред.</i></em></button>`).join('')}
       </div>
+      ${impHtml}
     </div>
     <div class="stats">
       <div class="stat err"><b>${errs.toLocaleString('ru-RU')}</b><span>ошибок</span></div>
@@ -1820,7 +1864,7 @@ function renderDeclCard(box, R, V, stale) {
     </div>
     <div class="fwrap" id="findings"></div>
   </div>`;
-  state._view = { V, objs: objs.filter(inCat), fnd, lines };
+  state._view = { V, objs: objs.filter(inCat), fnd, lines, lineImp: new Map(lines.map(l => [l.objKey + '|' + l.zvKey, l.imp])) };
   renderTable(); updateExportBtn();
 }
 /* сводка: итоги, главные проблемы по правилам, рабочее место «список + карточка» */
@@ -1893,7 +1937,7 @@ function renderSummary(R) {
   const RS = ruleStats(R), top = RS.list.slice(0, 10), max = Math.max(1, ...top.map(r => r.n));
   if (state.rule && !RS.list.some(r => r.id === state.rule)) state.rule = '';
   const ws = wsFiltered(R);
-  if (!SETTINGS.decl || SETTINGS.decl === '__none__' || !ws.some(d => d.no === SETTINGS.decl)) { SETTINGS.decl = ws[0]?.no || ''; state.cat = 'all'; }
+  if (!SETTINGS.decl || SETTINGS.decl === '__none__' || !ws.some(d => d.no === SETTINGS.decl)) { SETTINGS.decl = ws[0]?.no || ''; state.cat = 'all'; state.imp = 'all'; }
   const docState = DOCS.map(d => `<li><span class="${slotState(d) === 'ok' ? 'y' : 'n'}" aria-hidden="true">${slotState(d) === 'ok' ? '✓' : '✗'}</span>${short(d)}<span class="sr">${slotState(d) === 'ok' ? ' загружен' : ' не загружен'}</span></li>`).join('');
   const { html } = wsItemsHTML(R);
   $('#report').innerHTML = `<div class="report" style="gap:20px">
@@ -1968,19 +2012,26 @@ function renderTable() {
   const qq = state.filter.q.trim().toLowerCase();
   const catCell = c => `<span class="pill skip">${c}</span>`, Y = state.result.settings.year;
   if (state.view === 'summary') {
-    const A = aggTotals(W.objs), list = A.list.filter(x => !qq || [x.code, x.name, hazOf(x.z) && hazOf(x.z) + ' кл'].join(' ').toLowerCase().includes(qq));
+    const A = aggTotals(W.objs, state.imp === 'all' ? null : state.imp), list = A.list.filter(x => !qq || [x.code, x.name, hazOf(x.z) && hazOf(x.z) + ' кл'].join(' ').toLowerCase().includes(qq));
     $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Код ЗВ</th><th>Наименование вещества</th>${TCOLS.map(c => `<th class="vh">${thl(c[1])}</th>`).join('')}<th>Объектов</th></tr></thead><tbody>
-      <tr class="grp"><td colspan="2">Итого по ${W.V.decl ? 'декларации' : 'выборке'}${state.cat !== 'all' ? ` · ${state.cat} категория` : ''}<small>веществ: ${A.list.length}, объектов: ${W.objs.length}</small></td>${TCOLS.map(c => totCell(A.sum[c[0]], A.has[c[0]])).join('')}<td class="num">${W.objs.length}</td></tr>
-      ${list.map(x => `<tr><td class="zv"><span class="mono">${esc(x.code)}</span>${hazTag(x.z)}</td><td>${esc(x.name)}</td>${TCOLS.map(c => totCell(x.v[c[0]], A.has[c[0]])).join('')}<td class="num">${x.objs.size}</td></tr>`).join('')}
+      <tr class="grp"><td colspan="2">Итого по ${W.V.decl ? 'декларации' : 'выборке'}${state.cat !== 'all' ? ` · ${state.cat} категория` : ''}${state.imp === 'air' ? ' · выбросы' : state.imp === 'water' ? ' · сбросы' : state.imp === 'na' ? ' · вид не определён' : ''}<small>веществ: ${A.list.length}, объектов: ${W.objs.length}</small></td>${TCOLS.map(c => totCell(A.sum[c[0]], A.has[c[0]])).join('')}<td class="num">${W.objs.length}</td></tr>
+      ${list.map(x => `<tr><td class="zv"><span class="mono">${esc(x.code)}</span>${hazTag(x.z)}</td><td>${esc(x.name)}${state.imp === 'all' ? `<small class="blk">${impTag(x.air && x.water ? 'both' : x.water ? 'water' : x.air ? 'air' : '')}</small>` : ''}</td>${TCOLS.map(c => totCell(x.v[c[0]], A.has[c[0]])).join('')}<td class="num">${x.objs.size}</td></tr>`).join('')}
       </tbody></table>${!list.length ? '<div class="empty">Под фильтр ничего не попало.</div>' : ''}`;
     return;
   }
   if (state.view === 'objects') {
-    const list = W.objs.filter(o => (!state.filter.onlyBad || o.errors || o.warnings) && (!qq || [o.code, o.inn, o.name].join(' ').toLowerCase().includes(qq)));
+    const oImp = new Map(); for (const l of W.lines) { const s = oImp.get(l.objKey) || oImp.set(l.objKey, { air: new Set(), water: new Set(), za: 0, zw: 0, any: new Set() }).get(l.objKey); s.any.add(l.imp);
+      if (l.imp === 'air' || l.imp === 'both') s.za++; if (l.imp === 'water' || l.imp === 'both') s.zw++;
+      if (l.srcs) for (const x of l.srcs) { if (x.imp === 'air' || x.imp === 'both') s.air.add(x.srcKey); if (x.imp === 'water' || x.imp === 'both') s.water.add(x.srcKey); } }
+    const objImpOk = o => state.imp === 'all' || [...(oImp.get(o.key)?.any || [])].some(i => impMatch(i, state.imp));
+    const srcLine = o => { const s = oImp.get(o.key); if (!s || (!s.za && !s.zw)) return ''; const p = [];
+      if (s.za) p.push(`<span class="imp imp-air">${IMP_ICON.air}${s.air.size ? nSrc(s.air.size) : 'выбросы'}</span>`); if (s.zw) p.push(`<span class="imp imp-water">${IMP_ICON.water}${s.water.size ? nSrc(s.water.size) : 'сбросы'}</span>`);
+      return `<small class="blk">${p.join(' ')}</small>`; };
+    const list = W.objs.filter(o => objImpOk(o) && (!state.filter.onlyBad || o.errors || o.warnings) && (!qq || [o.code, o.inn, o.name].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const shown = list.slice(0, 1500);
     $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Объект</th><th>Реестр</th><th>Декларация</th><th>ДВОС / ПЭК / IV</th><th title="Число веществ: ДПНВОС / ОНВОС / ДВОС / ПЭК">ЗВ: ДП/ОН/ДВ/ПЭК</th><th>Итог</th></tr></thead><tbody>
-      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}" tabindex="0" title="Открыть вещества объекта"><td class="objc"><span class="obj-l">${catCell(o.cat)}<span class="obj-c">${esc(o.code)}</span></span><small>${esc(o.name)}</small><small class="mono">ИНН ${esc(o.inn)}</small></td>
+      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}" tabindex="0" title="Открыть вещества объекта"><td class="objc"><span class="obj-l">${catCell(o.cat)}<span class="obj-c">${esc(o.code)}</span></span><small>${esc(o.name)}</small><small class="mono">ИНН ${esc(o.inn)}</small>${srcLine(o)}</td>
         <td>${o.inReg ? (o.dateOut ? `исключён ${fmtDate(o.dateOut)}` : 'есть') + updCell(o.dateUpd, Y) : '<span class="pill fail">нет</span>'}</td>
         <td class="num">${o.dpNo ? esc(o.dpNo) : '<span class="pill fail">нет</span>'}</td>
         <td><span class="pill ${o.third[0]}">${esc(o.third[1])}</span>${o.dvNo ? `<small class="note blk">№ ${esc(o.dvNo)} · ${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</small>` : ''}${o.cat === 'III' && o.pkNo ? `<small class="note blk">№ ${esc(o.pkNo)}</small>` : ''}</td>
@@ -1991,7 +2042,8 @@ function renderTable() {
   }
   if (state.view === 'lines') {
     const fl = state.filter.line;
-    const list = W.lines.filter(l => (fl === 'all' || l.status === fl) && (!qq || [l.code, l.inn, l.name, l.zvCode, l.zvName, l.note, hazOf(l.zvKey) && hazOf(l.zvKey) + ' кл', ...(l.srcs || []).map(x => x.src)].join(' ').toLowerCase().includes(qq)));
+    const srcsOf = l => !l.srcs ? null : state.imp === 'all' ? l.srcs : l.srcs.filter(x => impMatch(x.imp, state.imp));
+    const list = W.lines.filter(l => impMatch(l.imp, state.imp) && (state.imp === 'all' || !l.srcs || srcsOf(l).length || !l.srcs.some(x => x.imp)) && (fl === 'all' || l.status === fl) && (!qq || [l.code, l.inn, l.name, l.zvCode, l.zvName, l.note, hazOf(l.zvKey) && hazOf(l.zvKey) + ' кл', ...(l.srcs || []).map(x => x.src)].join(' ').toLowerCase().includes(qq)));
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const head = `<thead><tr><th>Результат</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th class="vh">${thl(c[1])}</th>`).join('')}<th>Комментарий</th></tr></thead>`;
     const pill = st => `<span class="pill ${LINE[st][0]}">${LINE_PILL[st]}</span>`;
@@ -1999,15 +2051,18 @@ function renderTable() {
       /* группировка: объект → источник → вещества */
       const rows = [];
       for (const l of list) {
-        if (l.srcs) for (const x of l.srcs) rows.push({ l, src: x.src, sk: x.srcKey, vals: x.vals, status: x.status });
-        else rows.push({ l, src: '', sk: '', vals: l.vals, status: l.status, note: l.note });
+        const ss = srcsOf(l);
+        if (ss && ss.length) for (const x of ss) rows.push({ l, src: x.src, sk: x.srcKey, imp: x.imp || l.imp, vals: x.vals, status: x.status });
+        else rows.push({ l, src: '', sk: '', imp: l.imp, vals: l.vals, status: l.status, note: l.note });
       }
-      rows.sort((a, b) => a.l.cat.localeCompare(b.l.cat) || a.l.code.localeCompare(b.l.code) || (!a.sk) - (!b.sk) || srcCmp(a.sk, b.sk) || String(a.l.zvCode).localeCompare(String(b.l.zvCode)));
+      const IO = { air: 0, both: 1, water: 2, '': 3 };
+      rows.sort((a, b) => a.l.cat.localeCompare(b.l.cat) || a.l.code.localeCompare(b.l.code) || (IO[a.imp] ?? 3) - (IO[b.imp] ?? 3) || (!a.sk) - (!b.sk) || srcCmp(a.sk, b.sk) || String(a.l.zvCode).localeCompare(String(b.l.zvCode)));
       const shown = rows.slice(0, 2000); let prev = '', html = '';
       for (const r of shown) {
-        const g = r.l.objKey + '|' + r.sk;
-        if (g !== prev) { prev = g; const n = rows.filter(x => x.l.objKey === r.l.objKey && x.sk === r.sk).length;
-          html += `<tr class="grp"><td colspan="${4 + VCOLS.length}">${esc(r.l.code)} · ${r.sk ? 'источник ' + esc(r.src) : 'без номера источника'}<small>${esc(r.l.name)} · веществ: ${n}</small></td></tr>`; }
+        const g = r.l.objKey + '|' + r.sk + '|' + (r.sk ? '' : r.imp);
+        if (g !== prev) { prev = g; const n = rows.filter(x => x.l.objKey === r.l.objKey && x.sk === r.sk && (r.sk || x.imp === r.imp)).length;
+          const kind = r.imp === 'air' ? 'источник выбросов' : r.imp === 'water' ? 'источник сбросов' : 'источник';
+          html += `<tr class="grp grp-${r.imp || 'na'}"><td colspan="${4 + VCOLS.length}">${r.imp === 'air' || r.imp === 'water' ? IMP_ICON[r.imp] + ' ' : ''}${esc(r.l.code)} · ${r.sk ? kind + ' ' + esc(r.src) : (r.imp === 'air' ? 'выбросы' : r.imp === 'water' ? 'сбросы' : 'вещества') + ' без номера источника'}<small>${esc(r.l.name)} · веществ: ${n}</small></td></tr>`; }
         html += `<tr><td>${pill(r.status)}<small class="note blk">${r.l.cat} кат.</small></td><td class="obj">${r.sk ? 'ист. ' + esc(r.src) : '—'}<small>${esc(r.l.code)}</small></td>
           <td class="zv"><span class="mono">${esc(r.l.zvCode)}</span>${hazTag(r.l.zvKey)}<small>${esc(r.l.zvName)}</small></td>${VCOLS.map(c => valCell(r.vals[c[0]])).join('')}<td class="note">${esc(r.note || '')}</td></tr>`;
       }
@@ -2017,16 +2072,17 @@ function renderTable() {
     const shown = list.slice(0, 1500);
     $('#findings').innerHTML = `<table class="ftbl">${head}<tbody>
       ${shown.map(l => { const id = l.objKey + '|' + l.zvKey, open = l.srcs && state.openLines.has(id);
-        return `<tr${l.srcs ? ` class="rowlink${open ? ' open' : ''}" data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}<small class="note blk">${l.cat} кат.</small></td>
+        const ss = srcsOf(l);
+        return `<tr${ss && ss.length ? ` class="rowlink${open ? ' open' : ''}" data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}<small class="note blk">${l.cat} кат.</small></td>
         <td class="obj">${esc(l.code)}<small>${esc(l.name)}</small></td>
-        <td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}<small>${esc(l.zvName)}</small>${l.srcs ? `<span class="srcn">источников: ${l.srcs.length}</span>` : ''}</td>
+        <td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}<small>${esc(l.zvName)}</small>${state.imp === 'all' && l.imp ? `<small class="blk">${impTag(l.imp)}</small>` : ''}${ss && ss.length ? `<span class="srcn">источников: ${ss.length}</span>` : ''}</td>
         ${VCOLS.map(c => valCell(l.vals[c[0]])).join('')}<td class="note">${esc(l.note)}</td></tr>` +
-        (open ? l.srcs.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td class="obj">источник ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
+        (open && ss ? ss.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td class="obj">${x.imp === 'water' ? 'ист. сбросов' : x.imp === 'air' ? 'ист. выбросов' : 'источник'} ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length.toLocaleString('ru-RU')}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
     return;
   }
   const sev = state.filter.sev;
-  const list = W.fnd.filter(x => (sev === 'all' || x.severity === sev) && (!qq || [x.objectCode, x.inn, x.zvCode, x.zvName, x.message, x.kind, x.ruleId].join(' ').toLowerCase().includes(qq)));
+  const list = W.fnd.filter(x => (state.imp === 'all' || !x.zvKey || impMatch(W.lineImp.get(x.objKey + '|' + x.zvKey) ?? '', state.imp)) && (sev === 'all' || x.severity === sev) && (!qq || [x.objectCode, x.inn, x.zvCode, x.zvName, x.message, x.kind, x.ruleId].join(' ').toLowerCase().includes(qq)));
   if (!list.length) { $('#findings').innerHTML = `<div class="empty">${W.fnd.length ? 'Под фильтр ничего не попало.' : 'Замечаний нет.'}</div>`; return; }
   const shown = list.slice(0, 1500);
   $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Уровень</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th class="vh">${thl(c[1])}</th>`).join('')}<th>Описание</th></tr></thead><tbody>
@@ -2051,7 +2107,7 @@ function runNow(after) {
   }, 30);
 }
 function applyDecl(v) {
-  v = String(v || '').trim(); SETTINGS.decl = v; state.cat = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {};
+  v = String(v || '').trim(); SETTINGS.decl = v; state.cat = 'all'; state.imp = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {};
   if (v && v !== '__none__' && slotOf('DPNVOS')?.records) {
     const s = slotOf('DPNVOS'), rows = s.records.filter(r => norm(r.reportNo) === norm(v));
     if (!rows.length) { toast(`Декларация № ${v} не найдена в ДПНВОС`); renderDeclBar(); renderReport(); return; }
@@ -2099,20 +2155,21 @@ function buildReportWorkbook(R, V) {
   sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование', 'Декларации', 'В реестре', 'Дата исключения', 'Дата актуализации', 'Актуализация', 'ДПНВОС №', 'ДВОС / ПЭК / IV', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', 'ПЭК №', 'ЗВ ДПНВОС', 'ЗВ ОНВОС', 'ЗВ ДВОС', 'ЗВ ПЭК', 'Ошибок', 'Предупреждений', 'Результат'],
     ...objs.map(o => [o.cat, o.code, o.inn, o.name, o.decls.join(', '), o.inReg ? 'да' : 'нет', fmtDate(o.dateOut), fmtDate(o.dateUpd), UPD_TXT[updState(o.dateUpd, R.settings.year)] || '', o.dpNo || 'нет', o.third[1], o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), o.hasPek ? (o.pkNo || 'есть') : 'нет', o.zv.DPNVOS ?? '', o.zv.ONVOS ?? '', o.zv.DVOS ?? '', o.zv.PEK ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
     [8, 19, 13, 40, 14, 9, 14, 14, 20, 12, 18, 12, 14, 14, 12, 9, 9, 9, 9, 9, 12, 20], 'Объекты', true);
-  sheet([['№', 'Уровень', 'Проверка', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Тип', 'Описание', 'Документ', 'Строка в файле'],
-    ...fnd.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.cat, x.objectCode || '', x.inn || '', x.objectName || '', x.zvCode || '', hazOf(x.zvKey), x.zvName || '', ...VCOLS.map(c => vText(x.vals?.[c[0]])), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
-    [6, 15, 9, 8, 19, 13, 36, 9, 10, 36, ...VCOLS.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
+  const limp = new Map(lines.map(l => [l.objKey + '|' + l.zvKey, l.imp]));
+  sheet([['№', 'Уровень', 'Проверка', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Воздействие', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Тип', 'Описание', 'Документ', 'Строка в файле'],
+    ...fnd.map((x, i) => [i + 1, SEV[x.severity], x.ruleId, x.cat, x.objectCode || '', x.inn || '', x.objectName || '', x.zvKey ? IMP_TXT[limp.get(x.objKey + '|' + x.zvKey)] || '' : '', x.zvCode || '', hazOf(x.zvKey), x.zvName || '', ...VCOLS.map(c => vText(x.vals?.[c[0]])), x.kind || '', x.message, x.doc ? short(x.doc) : '', x.row ?? ''])],
+    [6, 15, 9, 8, 19, 13, 36, 14, 9, 10, 36, ...VCOLS.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
   const rowsTxt = l => DOCS.filter(d => l.rows[d]).map(d => `${short(d)}: ${l.rows[d].slice(0, 10).join(', ')}${l.rows[d].length > 10 ? '…' : ''}`).join('; ');
-  const head = ['Результат', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Комментарий', 'Строки в файлах'];
-  const toRow = l => [LINE[l.status][1], l.cat, l.code, l.inn, l.name, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.map(c => vText(l.vals[c[0]])), l.note, rowsTxt(l)];
-  const w = [26, 8, 19, 13, 36, 9, 10, 40, ...VCOLS.map(() => 13), 50, 40];
+  const head = ['Результат', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Воздействие', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Комментарий', 'Строки в файлах'];
+  const toRow = l => [LINE[l.status][1], l.cat, l.code, l.inn, l.name, IMP_TXT[l.imp] || '', l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.map(c => vText(l.vals[c[0]])), l.note, rowsTxt(l)];
+  const w = [26, 8, 19, 13, 36, 14, 9, 10, 40, ...VCOLS.map(() => 13), 50, 40];
   sheet([head, ...lines.filter(l => l.status === 'ok').map(toRow)], w, 'Прошли проверки', true);
   sheet([head, ...lines.map(toRow)], w, 'Сверка по веществам', true);
   const srcAoa = [];
-  for (const l of lines) if (l.srcs) for (const x of l.srcs) srcAoa.push([l.cat, l.code, l.inn, l.name, x.src, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.slice(1).map(c => vText(x.vals[c[0]])), LINE[x.status][1]]);
-  srcAoa.sort((a, b) => String(a[1]).localeCompare(String(b[1])) || srcCmp(String(a[4]), String(b[4])) || String(a[5]).localeCompare(String(b[5])));
-  sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Источник', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.slice(1).map(c => c[1]), 'Результат по источнику'], ...srcAoa],
-    [8, 19, 13, 36, 12, 9, 10, 40, ...VCOLS.slice(1).map(() => 13), 26], 'По источникам', true);
+  for (const l of lines) if (l.srcs) for (const x of l.srcs) srcAoa.push([l.cat, l.code, l.inn, l.name, IMP_TXT[x.imp] || '', x.src, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.slice(1).map(c => vText(x.vals[c[0]])), LINE[x.status][1]]);
+  srcAoa.sort((a, b) => String(a[1]).localeCompare(String(b[1])) || String(a[4]).localeCompare(String(b[4])) || srcCmp(String(a[5]), String(b[5])) || String(a[6]).localeCompare(String(b[6])));
+  sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Вид источника', 'Источник', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.slice(1).map(c => c[1]), 'Результат по источнику'], ...srcAoa],
+    [8, 19, 13, 36, 14, 12, 9, 10, 40, ...VCOLS.slice(1).map(() => 13), 26], 'По источникам', true);
   return wb;
 }
 async function exportReport(scope) {
@@ -2258,6 +2315,7 @@ document.addEventListener('click', e => {
   else if (act === 'clear') { state.page = 'docs'; for (const dd of DOCS) { const s = slotOf(dd); if (s?.worker) s.worker.terminate(); delete state.pool[dd]; } state.result = null; state.stale = false; SETTINGS.decl = ''; dbClear(); renderAll(); toast('Файлы убраны, сохранённые копии в браузере удалены'); }
   else if (act === 'view') { state.qs ||= {}; state.qs[state.view] = state.filter.q; state.view = el.dataset.id; state.filter.q = state.qs[state.view] || ''; renderReport(); }
   else if (act === 'vcat') { state.cat = el.dataset.id; renderReport(); }
+  else if (act === 'imp') { state.imp = el.dataset.id; if (state.page === 'summary') renderSummary(state.result); else renderReport(); }
   else if (act === 'open-decl') { if (el.dataset.view) state.view = el.dataset.view; applyDecl(el.dataset.id); }
   else if (act === 'top') { state.top = el.dataset.id; renderReport(); }
   else if (act === 'run') runNow();
@@ -2268,7 +2326,7 @@ document.addEventListener('click', e => {
   else if (act === 'g-all') showAllFound();
   else if (act === 'g-nodecl') { hideSearchResults(); goPage('nodecl'); state.view = 'objects'; state.filter.q = el.dataset.id; renderReport(); }
   else if (act === 'back') goPage(state.prevPage && state.prevPage !== 'decl' && state.prevPage !== 'nodecl' ? state.prevPage : 'decls');
-  else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {}; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
+  else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.imp = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {}; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
   else if (act === 'wsf') { state.wsf = el.dataset.id; renderSummary(state.result); }
   else if (act === 'rule') { state.rule = state.rule === el.dataset.id ? '' : el.dataset.id; if (state.rule && state.wsf === 'clean') state.wsf = 'all'; renderSummary(state.result); }
   else if (act === 'decl-find') applyDecl($('#p-decl').value);
@@ -2331,7 +2389,7 @@ function hideSearchResults() { const b = $('#g-res'); if (b) b.hidden = true; $(
 function openFound(no) {
   hideSearchResults();
   if (state.page === 'summary') {
-    state.rule = ''; state.wsf = 'all'; SETTINGS.decl = no; state.cat = 'all';
+    state.rule = ''; state.wsf = 'all'; SETTINGS.decl = no; state.cat = 'all'; state.imp = 'all';
     state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {};
     renderSummary(state.result);
     const ws = document.querySelector('.ws'); if (ws) { ws.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); ws.classList.add('ws-hit'); }
