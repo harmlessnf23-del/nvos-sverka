@@ -657,6 +657,9 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .ftbl tr.warning td.sev::before{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:8px;height:7px;background:var(--warn-fill)}
 .cnt-w::before,.pill.warnp::before{content:"";display:inline-block;width:7px;height:6px;margin-right:4px;vertical-align:1px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)}
 .prob .bar i.w{background:var(--warn-fill)}
+/* v47: масса по всем источникам (ДПНВОС без разбивки) */
+.ftbl td.v.allsrc{color:var(--muted)}
+.ftbl td.v.allsrc small{font-size:11px;font-weight:600}
 /* v46: фильтр «Принято», сортировка списка деклараций */
 .hideacc{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--fg);cursor:pointer;white-space:nowrap}
 .filters .hideacc,.ws-head .hideacc{color:var(--fg);font-size:14px}
@@ -871,7 +874,12 @@ function toDate(v) {
 const yearOf = v => { const d = v instanceof Date ? v.getFullYear() : parseInt(String(v ?? '').trim(), 10); return isNaN(d) ? null : d; };
 const addYears = (d, n) => new Date(d.getFullYear() + n, d.getMonth(), d.getDate());
 const fmtDate = d => d ? d.toLocaleDateString('ru-RU') : '';
-function fmtNum(n) { return n == null ? '—' : Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 7 }); }
+/* числа показываются полностью: малые массы (0,0000001133 т) не округляются до 0 — до 12 значащих цифр, без хвоста 1,2000000000000002 */
+function fmtNum(n) {
+  if (n == null) return '—';
+  const x = Number(n); if (!isFinite(x)) return String(n); if (x === 0) return '0';
+  return (+x.toPrecision(12)).toLocaleString('ru-RU', { maximumSignificantDigits: 12, useGrouping: Math.abs(x) >= 10000 });
+}
 function matchesImpact(v, impact) { const s = String(v ?? '').toLowerCase(); return impact === 'water' ? s.includes('сброс') : s.includes('выброс'); }
 
 /* =====================================================================
@@ -1430,12 +1438,14 @@ function zvInfo(P, z) {
 }
 const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т'], ['PEK', 'ПЭК W, т/год']];
 function valsOf(o, P, z) {
-  const v = {}, has = d => P.find(x => x[0] === d);
-  for (const d of ['DPNVOS', 'ONVOS', 'DVOS', 'PEK']) {
-    const p = has(d);
-    if (!p) { v[d] = { t: 'na' }; continue; }
-    const e = p[1].get(z);
-    v[d] = !e ? { t: 'miss' } : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass };
+  /* значения показываются из всех документов объекта, даже если документ не участвует в сверке для его категории
+     (например, ДВОС у объекта III категории) — вместо прочерка видно число */
+  const v = {}, has = d => P.find(x => x[0] === d), own = { DPNVOS: o.dp?.rep.zv, ONVOS: o.on?.zv, DVOS: o.dv?.rep.zv };
+  for (const d of ['DPNVOS', 'ONVOS', 'DVOS']) {
+    const p = has(d), zv = p ? p[1] : own[d];
+    if (!zv) { v[d] = { t: 'na' }; continue; }
+    const e = zv.get(z);
+    v[d] = !e ? (p ? { t: 'miss' } : { t: 'na' }) : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass };
   }
   /* ПЭК — справочно (не участвует в сверке): берётся отчёт ПЭК объекта за год */
   if (!o.pk) v.PEK = o.cat === 'III' ? { t: 'miss' } : { t: 'na' };
@@ -1451,21 +1461,24 @@ const listMsg = (arr, n = 6) => arr.slice(0, n).join('; ') + (arr.length > n ? `
 /* строки по источникам для вещества: реестр (AE т/г, AD г/с), ДВОС (т/г), ПЭК (г/с, максимум замеров) */
 function srcRowsOf(o, P, z, tol) {
   const g = d => d === 'PEK' ? (o.pk ? [d, o.pk.rep.zv] : null) : P.find(x => x[0] === d), on = g('ONVOS')?.[1].get(z), dv = g('DVOS')?.[1].get(z), pk = g('PEK')?.[1].get(z);
-  if (!hasSrc(on) && !hasSrc(dv) && !hasSrc(pk)) return null;
-  const keys = [...new Set([on, dv, pk].flatMap(e => e?.src ? [...e.src.keys()] : []))].sort(srcCmp);
+  const dvShow = dv ?? (o.dv && !g('DVOS') ? o.dv.rep.zv.get(z) : undefined);   // ДВОС у объектов не II категории — только показать
+  if (!hasSrc(on) && !hasSrc(dvShow) && !hasSrc(pk)) return null;
+  const keys = [...new Set([on, dvShow, pk].flatMap(e => e?.src ? [...e.src.keys()] : []))].sort(srcCmp);
   const wOnly = waterOnly(P, z);   // сбросы не требуются в ДВОС / ПЭК
-  const cell = (doc, e, k, val) => { if (!g(doc) || (wOnly && (doc === 'DVOS' || (doc === 'PEK' && !slotOf('PEK_W')?.records)))) return { t: 'na' }; if (!e) return { t: 'miss' }; if (!e.src) return { t: 'na' }; const x = e.src.get(k); return !x ? { t: 'miss' } : val(x); };
+  const cell = (doc, e, k, val) => { if ((!g(doc) && !(doc === 'DVOS' && e)) || (wOnly && (doc === 'DVOS' || (doc === 'PEK' && !slotOf('PEK_W')?.records)))) return { t: 'na' }; if (!e) return { t: 'miss' }; if (!e.src) return { t: 'na' }; const x = e.src.get(k); return !x ? { t: 'miss' } : val(x); };
   return keys.map(k => {
-    const a = on?.src?.get(k), b = dv?.src?.get(k), c = pk?.src?.get(k);
-    const vals = { DPNVOS: { t: 'na' },
+    const a = on?.src?.get(k), b = dv?.src?.get(k), c = pk?.src?.get(k), bs = dvShow?.src?.get(k);
+    /* в ДПНВОС нет номеров источников: при одном источнике — масса вещества, при нескольких — общая масса с пометкой Σ */
+    const dpE = g('DPNVOS')?.[1].get(z);
+    const vals = { DPNVOS: !g('DPNVOS') ? { t: 'na' } : !dpE ? { t: 'miss' } : (dpE.massEmpty && !dpE.hasMass) ? { t: 'empty' } : { t: 'num', n: dpE.mass, all: keys.length > 1 },
       ONVOS: cell('ONVOS', on, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
-      DVOS: cell('DVOS', dv, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
+      DVOS: cell('DVOS', dvShow, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
       PEK: cell('PEK', pk, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }) };
     let st = 'ok';
     if ((b && a && Math.abs(b.mass - a.mass) > tol) || (c && a && a.power != null && c.hasMass && c.massMax - a.power > tol)) st = 'bad';
-    else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
+    else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && d !== 'DPNVOS' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
     const li = impOfZv(P, z);
-    return { src: (a || b || c).label, srcKey: k, vals, status: st, imp: impOfSrc(a, li === 'both' ? '' : li) };
+    return { src: (a || bs || c).label, srcKey: k, vals, status: st, imp: impOfSrc(a, li === 'both' ? '' : li) };
   });
 }
 /* вид воздействия вещества: по типу источника в реестре (и разделу ДПНВОС, если сопоставлен) — air / water / both / '' (не определено) */
@@ -1800,6 +1813,7 @@ function valCell(v) {
   if (!v || v.t === 'na') return '<td class="v na">—</td>';
   if (v.t === 'miss') return '<td class="v miss"><span>нет</span></td>';
   if (v.t === 'empty') return '<td class="v miss"><span>пусто</span></td>';
+  if (v.all) return `<td class="v allsrc" title="В ДПНВОС нет разбивки по источникам — показана масса вещества по всем источникам">${fmtNum(v.n)} <small>Σ</small></td>`;
   return `<td class="v">${fmtNum(v.n)}</td>`;
 }
 const CATS = ['I', 'II', 'III', 'IV', '—'];
