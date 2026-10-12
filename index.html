@@ -768,11 +768,12 @@ const DOC_TYPES = {
     fld('category',  'Категория объекта', ['категория объекта']),
     fld('zvCode',    'Код ЗВ', ['код зв', 'код загрязняющ', 'код вещества'], true),
     fld('zvName',    'Наименование ЗВ', ['наименование зв', 'загрязняющее вещество', 'наименование вещества']),
-    fld('mass',      'Масса для сверки (НДВ/НДС), т', ['фактический выброс зв ндв', 'фактический сброс зв ндс', 'ндв тн', 'ндс'], true),
+    fld('mass',      'Масса для сверки (НДВ/НДС), т', ['фактический выброс зв ндв', 'фактический сброс зв ндс', 'ндв тн', 'ндс', 'фактический выброс загрязняющ', 'фактический сброс загрязняющ'], true),
     fld('massTotal', 'Фактический выброс/сброс всего (V), т', ['фактический выброс зв всего', 'фактический сброс зв всего'], false, 21),
     fld('massVrv',   'В пределах ВРВ/ВРС, т', ['фактический выброс зв в пределах врв', 'фактический сброс зв в пределах врс', 'в пределах врв', 'в пределах врс']),
     fld('massOver',  'Сверх лимита, т', ['фактический выброс сверх', 'фактический сброс сверх']),
     fld('section',   'Раздел / вид воздействия', ['раздел', 'вид воздействия', 'тип воздействия']),
+    fld('sourceNo',  'Код (номер) источника (P)', ['код источника выбросов', 'код источника сбросов', 'код источника', 'номер источника', 'номер выпуска']),
   ] },
   ONVOS: { short: 'ОНВОС', title: 'Реестр объектов НВОС', fields: [
     fld('objectCode','Номер ОНВОС', ['номер онвос', 'код объекта нвос', 'код онвос', 'код объекта'], true),
@@ -813,7 +814,7 @@ const DOC_TYPES = {
     fld('category',  'Категория объекта', ['категория объекта']),
     fld('zvCode',    'Код загрязняющего вещества', ['код загрязняющ', 'код зв', 'код вещества']),
     fld('zvName',    'Загрязняющее вещество', ['загрязняющее вещество', 'наименование зв', 'наименование вещества']),
-    fld('mass',      'Фактический выброс/сброс, т/год (W)', ['т/год', 'тонн/год', 'тонн в год'], false, 22),
+    fld('mass',      'Фактический выброс/сброс, г/с (X)', ['фактический выброс', 'фактический сброс', 'т/год', 'тонн/год'], false, 23),   /* в выгрузке ПЭК: W — ПДВ г/с, X — фактический г/с */
     fld('sourceNo',  'Номер источника (S)', ['номер источника'], false, 18),
   ] },   /* ПЭК: проверяется только наличие отчёта за год; вещества и массы показываются справочно и не сверяются */
 };
@@ -1141,7 +1142,9 @@ async function openFile(docId, file, saved) {
     }
     slot.headerRow = saved && saved.headerRow >= 0 && saved.headerRow < 30 ? saved.headerRow : detectHeaderRow(slot.preview);
     slot.headers = headersOf(slot);
-    slot.map = saved && saved.map ? savedMap(saved.map, slot.headers.length) : automap(docId, slot.headers);
+    /* до версии 48 у ПЭК по умолчанию брался столбец W (ПДВ), у ДПНВОС не было кода источника — такие сохранённые сопоставления пересобираются */
+    const oldPek = (baseOf(docId) === 'PEK' || baseOf(docId) === 'DPNVOS') && saved && !(saved.mv >= 48);
+    slot.map = saved && saved.map && !oldPek ? savedMap(saved.map, slot.headers.length) : automap(docId, slot.headers);
     if (!saved) dbPutFile(docId, file);
     await loadRows(docId, slot);
   } catch (e) {
@@ -1184,7 +1187,7 @@ async function loadRows(docId, slot) {
   for (let i = 0; i < n; i++) { const r = { _row: rowNums[i] }; if (imp) r._imp = imp; for (let k = 0; k < fields.length; k++) r[fields[k]] = getters[k](i); recs[i] = r; }
   colsData = null;
   slot.records = recs; slot.loading = null;
-  if (!slot.demo) dbPutCfg(docId, { name: slot.fileName, sheet: slot.sheet, headerRow: slot.headerRow, map: { ...slot.map } });
+  if (!slot.demo) dbPutCfg(docId, { name: slot.fileName, sheet: slot.sheet, headerRow: slot.headerRow, map: { ...slot.map }, mv: 48 });
   touchDoc(docId); autoYear(); renderParams(); renderDeclBar(); renderSlots(); renderReport(); renderRunState();
 }
 async function reHead(docId, slot) {
@@ -1436,7 +1439,7 @@ function zvInfo(P, z) {
   if (dp && dp.dpCode && dp.dpCode !== code) code = `${code} (ДПНВОС: ${dp.dpCode})`;
   return { zvCode: code ?? z, zvName: name, zvKey: z };
 }
-const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т'], ['PEK', 'ПЭК W, т/год']];
+const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т'], ['PEK', 'ПЭК X, г/с']];
 function valsOf(o, P, z) {
   /* значения показываются из всех документов объекта, даже если документ не участвует в сверке для его категории
      (например, ДВОС у объекта III категории) — вместо прочерка видно число */
@@ -1462,15 +1465,18 @@ const listMsg = (arr, n = 6) => arr.slice(0, n).join('; ') + (arr.length > n ? `
 function srcRowsOf(o, P, z, tol) {
   const g = d => d === 'PEK' ? (o.pk ? [d, o.pk.rep.zv] : null) : P.find(x => x[0] === d), on = g('ONVOS')?.[1].get(z), dv = g('DVOS')?.[1].get(z), pk = g('PEK')?.[1].get(z);
   const dvShow = dv ?? (o.dv && !g('DVOS') ? o.dv.rep.zv.get(z) : undefined);   // ДВОС у объектов не II категории — только показать
-  if (!hasSrc(on) && !hasSrc(dvShow) && !hasSrc(pk)) return null;
-  const keys = [...new Set([on, dvShow, pk].flatMap(e => e?.src ? [...e.src.keys()] : []))].sort(srcCmp);
+  const dpZ = g('DPNVOS')?.[1].get(z);
+  if (!hasSrc(on) && !hasSrc(dvShow) && !hasSrc(pk) && !hasSrc(dpZ)) return null;
+  const keys = [...new Set([on, dvShow, pk, dpZ].flatMap(e => e?.src ? [...e.src.keys()] : []))].sort(srcCmp);
   const wOnly = waterOnly(P, z);   // сбросы не требуются в ДВОС / ПЭК
   const cell = (doc, e, k, val) => { if ((!g(doc) && !(doc === 'DVOS' && e)) || (wOnly && (doc === 'DVOS' || (doc === 'PEK' && !slotOf('PEK_W')?.records)))) return { t: 'na' }; if (!e) return { t: 'miss' }; if (!e.src) return { t: 'na' }; const x = e.src.get(k); return !x ? { t: 'miss' } : val(x); };
   return keys.map(k => {
     const a = on?.src?.get(k), b = dv?.src?.get(k), c = pk?.src?.get(k), bs = dvShow?.src?.get(k);
     /* в ДПНВОС нет номеров источников: при одном источнике — масса вещества, при нескольких — общая масса с пометкой Σ */
     const dpE = g('DPNVOS')?.[1].get(z);
-    const vals = { DPNVOS: !g('DPNVOS') ? { t: 'na' } : !dpE ? { t: 'miss' } : (dpE.massEmpty && !dpE.hasMass) ? { t: 'empty' } : { t: 'num', n: dpE.mass, all: keys.length > 1 },
+    /* если в ДПНВОС есть код источника — масса по источнику; иначе масса вещества (при нескольких источниках — с пометкой Σ) */
+    const vals = { DPNVOS: !g('DPNVOS') ? { t: 'na' } : !dpE ? { t: 'miss' } : (dpE.massEmpty && !dpE.hasMass) ? { t: 'empty' }
+        : hasSrc(dpE) ? (dpE.src.get(k) ? (dpE.src.get(k).hasMass ? { t: 'num', n: dpE.src.get(k).mass } : { t: 'empty' }) : { t: 'miss' }) : { t: 'num', n: dpE.mass, all: keys.length > 1 },
       ONVOS: cell('ONVOS', on, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
       DVOS: cell('DVOS', dvShow, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
       PEK: cell('PEK', pk, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }) };
@@ -1478,7 +1484,7 @@ function srcRowsOf(o, P, z, tol) {
     if ((b && a && Math.abs(b.mass - a.mass) > tol) || (c && a && a.power != null && c.hasMass && c.massMax - a.power > tol)) st = 'bad';
     else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && d !== 'DPNVOS' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
     const li = impOfZv(P, z);
-    return { src: (a || bs || c).label, srcKey: k, vals, status: st, imp: impOfSrc(a, li === 'both' ? '' : li) };
+    return { src: (a || bs || c || dpE?.src?.get(k)).label, srcKey: k, vals, status: st, imp: impOfSrc(a, li === 'both' ? '' : li) };
   });
 }
 /* вид воздействия вещества: по типу источника в реестре (и разделу ДПНВОС, если сопоставлен) — air / water / both / '' (не определено) */
@@ -1606,12 +1612,12 @@ function buildLines(M, findings) {
 }
 const VALID = { full: ['ok', 'ДВОС: входит'], partial: ['warnp', 'ДВОС: частично'], expired: ['fail', 'ДВОС: истекла'], future: ['fail', 'ДВОС: подана позже'], nodate: ['fail', 'ДВОС: нет даты'] };
 /* «Общие данные»: суммы по объекту и по веществам — ОНВОС AE (т), ДПНВОС V (т), ДВОС W (т), ПЭК W (т/год) */
-const TCOLS = [['ONVOS', 'ОНВОС AE, т'], ['DPNVOS', 'ДПНВОС V, т'], ['DVOS', 'ДВОС W, т'], ['PEK', 'ПЭК W, т/год']];
+const TCOLS = [['ONVOS', 'ОНВОС AE, т'], ['DPNVOS', 'ДПНВОС V, т'], ['DVOS', 'ДВОС W, т'], ['PEK', 'ПЭК X, г/с']];
 /* ПЭК — только факт наличия отчёта за год: зелёная галочка / красный крестик */
 const ynCell = v => `<span class="yn ${v ? 'y' : 'n'}" title="${v ? 'Отчёт ПЭК за год есть' : 'Отчёта ПЭК за год нет'}">${v ? '✓' : '✗'}</span>`;
 function totalsOf(o) {
   const src = { ONVOS: o.on?.zv, DPNVOS: o.dp?.rep.zv, DVOS: o.dv?.rep.zv, PEK: o.pk?.rep.zv };
-  const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : null, DVOS: e => e.hasMass ? e.mass : null, PEK: e => e.hasMass ? e.mass : null };
+  const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : e.hasMass ? e.mass : null, DVOS: e => e.hasMass ? e.mass : null, PEK: e => e.hasMass ? e.mass : null };
   const zv = new Map();
   for (const [d] of TCOLS) if (src[d]) for (const [z, e] of src[d]) {
     let x = zv.get(z); if (!x) zv.set(z, x = { z, code: e.code, name: '', v: {}, air: false, water: false });
@@ -1669,7 +1675,7 @@ const ICON = {
   file: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13l2 2 4-4"/></svg>',
 };
 const SHARED = { ONVOS: 'Весь реестр — объекты всех категорий, источники выбросов и сбросов', DPNVOS_A: 'Раздел «выбросы», все категории', DPNVOS_W: 'Раздел «сбросы», все категории', DVOS: 'Общая — выбросы и сбросы; нужна для объектов II категории',
-  PEK_A: 'Выбросы, III категория — наличие отчёта за год; вещества и т/год справочно', PEK_W: 'Сбросы, III категория — наличие отчёта за год; вещества и т/год справочно' };
+  PEK_A: 'Выбросы, III категория — наличие отчёта за год; фактический выброс/сброс г/с справочно', PEK_W: 'Сбросы, III категория — наличие отчёта за год; фактический выброс/сброс г/с справочно' };
 function renderRunState() {
   const loading = DOCS.some(d => slotOf(d)?.loading);
   const rb = $('#btn-run'), rl = loading ? 'Файлы загружаются…' : state.result ? 'Проверить заново' : 'Запустить проверку';
