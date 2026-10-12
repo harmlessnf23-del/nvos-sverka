@@ -657,6 +657,14 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .ftbl tr.warning td.sev::before{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:8px;height:7px;background:var(--warn-fill)}
 .cnt-w::before,.pill.warnp::before{content:"";display:inline-block;width:7px;height:6px;margin-right:4px;vertical-align:1px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)}
 .prob .bar i.w{background:var(--warn-fill)}
+/* v46: фильтр «Принято», сортировка списка деклараций */
+.hideacc{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--fg);cursor:pointer;white-space:nowrap}
+.filters .hideacc,.ws-head .hideacc{color:var(--fg);font-size:14px}
+.hideacc input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.dfilters .segm button small{font-weight:400;color:var(--muted);font-size:12px}
+.dfilters .segm button[aria-pressed="true"] small{color:var(--accent-text)}
+.dfilters select{width:auto}
+.dfl-sp{flex:1}
 /* v45: шесть карточек загрузки — 3 в ряд */
 .slots{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media (max-width:1000px){.slots{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -1185,7 +1193,7 @@ async function reHead(docId, slot) {
    Сверка идёт сразу по всем категориям, результат смотрится в разрезе декларации.
    ===================================================================== */
 const DOCS = ['ONVOS', 'DPNVOS_A', 'DPNVOS_W', 'DVOS', 'PEK_A', 'PEK_W'];
-const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', imp: 'all', listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
+const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', imp: 'all', dfl: 'all', dsort: 'issues', hideAcc: false, listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
 const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001, decl: '' };
 const slotOf = d => state.pool[d];
 const poolKey = d => d;
@@ -1658,12 +1666,15 @@ function renderRunState() {
   renderNav();
 }
 const RUN_ICON = '<span class="emb emb-run"><svg class="emb-svg lupa" viewBox="0 0 48 48" aria-hidden="true"><circle class="l-in" cx="20" cy="20" r="12.5" fill="#E3F3EF"/><g class="l-b" fill="#0B1F33"><rect x="11.5" y="21.5" width="3.2" height="6"/><rect x="15.5" y="18.5" width="3.2" height="9"/><rect x="19.5" y="14.5" width="3.2" height="13"/><rect x="23.5" y="20" width="3.2" height="7.5"/><rect x="10" y="27.5" width="20" height="1.6"/></g><g class="l-s" fill="#A0AEC0"><circle cx="22.6" cy="12" r="1.8"/><circle cx="25.2" cy="9.4" r="1.3"/></g><line class="l-h" x1="30" y1="30" x2="41" y2="41" stroke="#346E58" stroke-width="5.5" stroke-linecap="round"/><circle class="l-r" cx="20" cy="20" r="13.5" fill="none" stroke="#479C80" stroke-width="4"/></svg></span>';
+const DSORT_KEYS = { issues: 1, clean: 1, no: 1 };
 /* боковое меню: свёрнутое состояние запоминается в браузере */
 function applyRail() {
   const c = !!state.railCollapsed, app = $('.app'); if (!app) return;
   app.classList.toggle('collapsed', c);
   const t = $('#rail-toggle'); if (t) { t.setAttribute('aria-expanded', String(!c)); const l = c ? 'Развернуть меню' : 'Свернуть меню'; t.setAttribute('aria-label', l); t.title = l; }
 }
+try { const v = JSON.parse(localStorage.getItem('sverka-list') || '{}'); if (v.dsort in DSORT_KEYS) state.dsort = v.dsort; state.hideAcc = !!v.hideAcc; } catch (e) {}
+function saveListPrefs() { try { localStorage.setItem('sverka-list', JSON.stringify({ dsort: state.dsort, hideAcc: state.hideAcc })); } catch (e) {} }
 try { const v = localStorage.getItem('sverka-rail'); state.railCollapsed = v == null ? innerWidth < 1200 : v === '1'; } catch (e) { state.railCollapsed = innerWidth < 1200; }
 /* боковое меню */
 const NAV_ICON = {
@@ -1950,9 +1961,19 @@ function ruleStats(R) {
   return (R._rules = { list, declRules });
 }
 const probLabel = (R, key) => ruleStats(R).list.find(r => r.id === key)?.label || key;
+/* статус «Принято»: декларация скрывается, если все её статусы — «Принято» (не «Не принято») */
+const isAccepted = d => d.statuses.length > 0 && d.statuses.every(x => /принят/i.test(x) && !/не\s*принят/i.test(x));
+const hasIssues = d => d.errors || d.warnings;
+const DSORT = { issues: ['Сначала с замечаниями', (a, b) => b.errors - a.errors || b.warnings - a.warnings || (num(a.no) || 0) - (num(b.no) || 0)],
+  clean: ['Сначала без замечаний', (a, b) => (!!hasIssues(a)) - (!!hasIssues(b)) || a.errors - b.errors || a.warnings - b.warnings || (num(a.no) || 0) - (num(b.no) || 0)],
+  no: ['По номеру декларации', (a, b) => (num(a.no) || 0) - (num(b.no) || 0)] };
+function hideAccToggle(R) {
+  const n = R.decls.filter(isAccepted).length;
+  return n ? `<label class="hideacc" title="Скрыть декларации, у которых статус «Принято»"><input type="checkbox" data-act="hideacc" ${state.hideAcc ? 'checked' : ''}> Скрыть «Принято» <span class="note">${n.toLocaleString('ru-RU')}</span></label>` : '';
+}
 function wsFiltered(R) {
   const q = state.listQ.trim().toLowerCase(), RS = ruleStats(R);
-  return R.decls.filter(d => (state.wsf === 'all' || (state.wsf === 'err' ? d.errors || d.warnings : !d.errors && !d.warnings))
+  return R.decls.filter(d => (!state.hideAcc || !isAccepted(d)) && (state.wsf === 'all' || (state.wsf === 'err' ? d.errors || d.warnings : !d.errors && !d.warnings))
     && (!state.rule || RS.declRules.get(d.no)?.has(state.rule))
     && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => b.errors - a.errors || b.warnings - a.warnings || (num(a.no) || 0) - (num(b.no) || 0));
@@ -2002,6 +2023,7 @@ function renderSummary(R) {
     <section class="card ws" aria-label="Рабочее место">
       <div class="ws-list">
         <div class="ws-head"><h2>Декларации <span class="note" id="ws-count">${ws.length.toLocaleString('ru-RU')}</span></h2>
+          ${hideAccToggle(R)}
           <div class="segm" role="group" aria-label="Фильтр">${[['all', 'Все'], ['err', 'С замечаниями'], ['clean', 'Чистые']].map(([id, t]) => `<button type="button" data-act="wsf" data-id="${id}" aria-pressed="${state.wsf === id}">${t}</button>`).join('')}</div>
           ${state.rule ? `<span class="rulechip" title="${esc(probLabel(R, state.rule))}"><span class="rc-t">${esc(probLabel(R, state.rule))}</span><button type="button" data-act="rule" data-id="${esc(state.rule)}" aria-label="Снять фильтр по проблеме">✕</button></span>` : ''}
         </div>
@@ -2018,7 +2040,9 @@ function renderSummary(R) {
 }
 function renderDeclList(R, stale) {
   const q = state.listQ.trim().toLowerCase();
-  const list = R.decls.filter(d => !q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q));
+  const base = R.decls.filter(d => (!state.hideAcc || !isAccepted(d)) && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)));
+  const nI = base.filter(hasIssues).length, nC = base.length - nI;
+  const list = base.filter(d => state.dfl === 'all' || (state.dfl === 'err' ? hasIssues(d) : !hasIssues(d))).sort((DSORT[state.dsort] || DSORT.issues)[1]);
   const noDecl = R.objects.filter(o => !o.decls.length);
   const errs = R.findings.filter(x => x.severity === 'error').length;
   const shown = list.slice(0, 500);
@@ -2033,7 +2057,11 @@ function renderDeclList(R, stale) {
       <div class="stat warn"><b>${(R.findings.length - errs).toLocaleString('ru-RU')}</b><span>предупреждений</span></div>
     </div>
     <div class="tabs" role="tablist">${[['decls', 'Декларации'], ['summary', 'Общие данные']].map(([id, t]) => `<button role="tab" data-act="top" data-id="${id}" aria-selected="${state.top === id}">${t}</button>`).join('')}</div>
-    <div class="filters">
+    <div class="filters dfilters">
+      <div class="segm" role="group" aria-label="Замечания">${[['all', 'Все', base.length], ['err', 'С замечаниями', nI], ['clean', 'Без замечаний', nC]].map(([id, t, n]) => `<button type="button" data-act="dfl" data-id="${id}" aria-pressed="${state.dfl === id}">${t} <small>${n.toLocaleString('ru-RU')}</small></button>`).join('')}</div>
+      <label for="dsort" class="sr">Сортировка</label><select id="dsort" aria-label="Сортировка">${Object.entries(DSORT).map(([k, [t]]) => `<option value="${k}" ${state.dsort === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+      ${hideAccToggle(R)}
+      <span class="dfl-sp"></span>
       ${noDecl.length ? `<button class="btn small" data-act="open-decl" data-id="__none__">Объекты без декларации · ${noDecl.length.toLocaleString('ru-RU')}</button>` : ''}</div>
     ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th class="vh">${thl(c[1])}</th>`).join('')}<th></th></tr></thead><tbody>
       ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td>
@@ -2374,6 +2402,7 @@ document.addEventListener('click', e => {
   else if (act === 'back') goPage(state.prevPage && state.prevPage !== 'decl' && state.prevPage !== 'nodecl' ? state.prevPage : 'decls');
   else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.imp = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {}; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
   else if (act === 'wsf') { state.wsf = el.dataset.id; renderSummary(state.result); }
+  else if (act === 'dfl') { state.dfl = el.dataset.id; renderReport(); }
   else if (act === 'rule') { state.rule = state.rule === el.dataset.id ? '' : el.dataset.id; if (state.rule && state.wsf === 'clean') state.wsf = 'all'; renderSummary(state.result); }
   else if (act === 'decl-find') applyDecl($('#p-decl').value);
   else if (act === 'decl-clear') applyDecl('');
@@ -2386,6 +2415,8 @@ document.addEventListener('change', async e => {
   if (el.id === 'flt-bad') { state.filter.onlyBad = el.checked; renderTable(); return; }
   if (el.id === 'flt-line') { state.filter.line = el.value; renderTable(); return; }
   if (el.id === 'flt-grp') { state.filter.grp = el.value; renderTable(); return; }
+  if (el.id === 'dsort') { state.dsort = el.value; saveListPrefs(); renderReport(); return; }
+  if (act === 'hideacc') { state.hideAcc = el.checked; saveListPrefs(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); return; }
   if (el.id === 'p-year') { SETTINGS.year = +el.value; SETTINGS.yearAuto = false; saveMeta(); touchDoc(); renderParams(); renderReport(); return; }
   if (el.id === 'p-tol') { const v = num(el.value); if (v == null || v < 0) { toast('Допуск — неотрицательное число, например 0,000001'); el.value = SETTINGS.tol; return; } SETTINGS.tol = v; saveMeta(); touchDoc(); renderReport(); return; }
   if (!act) return;
