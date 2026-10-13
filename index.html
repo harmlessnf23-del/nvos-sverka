@@ -787,6 +787,7 @@ const DOC_TYPES = {
     fld('sourceNo',  'Номер источника', ['номер источника']),
     fld('zvCode',    'Код вещества', ['код вещества', 'код зв', 'код загрязняющ'], true),
     fld('zvName',    'Наименование вещества', ['наименование вещества', 'наименование зв']),
+    fld('power',     'Мощность выброса, г/с (AD)', ['мощность'], false, 29),
     fld('mass',      'Масса выбросов/сбросов, т', ['масса выбросов/сбросов', 'масса выбросов', 'масса сбросов', 'масса'], true),
   ] },
   DVOS: { short: 'ДВОС', title: 'Декларация о воздействии на окружающую среду', fields: [
@@ -1143,7 +1144,7 @@ async function openFile(docId, file, saved) {
     slot.headerRow = saved && saved.headerRow >= 0 && saved.headerRow < 30 ? saved.headerRow : detectHeaderRow(slot.preview);
     slot.headers = headersOf(slot);
     /* до версии 48 у ПЭК по умолчанию брался столбец W (ПДВ), у ДПНВОС не было кода источника — такие сохранённые сопоставления пересобираются */
-    const oldPek = (baseOf(docId) === 'PEK' || baseOf(docId) === 'DPNVOS') && saved && !(saved.mv >= 48);
+    const oldPek = saved && ((baseOf(docId) === 'PEK' || baseOf(docId) === 'DPNVOS') && !(saved.mv >= 48) || docId === 'ONVOS' && !(saved.mv >= 49));
     slot.map = saved && saved.map && !oldPek ? savedMap(saved.map, slot.headers.length) : automap(docId, slot.headers);
     if (!saved) dbPutFile(docId, file);
     await loadRows(docId, slot);
@@ -1187,7 +1188,7 @@ async function loadRows(docId, slot) {
   for (let i = 0; i < n; i++) { const r = { _row: rowNums[i] }; if (imp) r._imp = imp; for (let k = 0; k < fields.length; k++) r[fields[k]] = getters[k](i); recs[i] = r; }
   colsData = null;
   slot.records = recs; slot.loading = null;
-  if (!slot.demo) dbPutCfg(docId, { name: slot.fileName, sheet: slot.sheet, headerRow: slot.headerRow, map: { ...slot.map }, mv: 48 });
+  if (!slot.demo) dbPutCfg(docId, { name: slot.fileName, sheet: slot.sheet, headerRow: slot.headerRow, map: { ...slot.map }, mv: 49 });
   touchDoc(docId); autoYear(); renderParams(); renderDeclBar(); renderSlots(); renderReport(); renderRunState();
 }
 async function reHead(docId, slot) {
@@ -1439,7 +1440,7 @@ function zvInfo(P, z) {
   if (dp && dp.dpCode && dp.dpCode !== code) code = `${code} (ДПНВОС: ${dp.dpCode})`;
   return { zvCode: code ?? z, zvName: name, zvKey: z };
 }
-const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т'], ['PEK', 'ПЭК X, г/с']];
+const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т'], ['ONVOS_P', 'ОНВОС AD, г/с'], ['PEK', 'ПЭК X, г/с']];
 function valsOf(o, P, z) {
   /* значения показываются из всех документов объекта, даже если документ не участвует в сверке для его категории
      (например, ДВОС у объекта III категории) — вместо прочерка видно число */
@@ -1454,7 +1455,8 @@ function valsOf(o, P, z) {
   if (!o.pk) v.PEK = o.cat === 'III' ? { t: 'miss' } : { t: 'na' };
   else { const e = o.pk.rep.zv.get(z); v.PEK = !e ? (waterOnly(P, z) && !slotOf('PEK_W')?.records ? { t: 'na' } : { t: 'miss' }) : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass }; }
   const on = has('ONVOS');
-  if (o.cat !== 'III' || !on) v.ONVOS_P = { t: 'na' };
+  /* мощность г/с из реестра — для сравнения с фактическим выбросом г/с из ПЭК (справочно, у всех категорий) */
+  if (!on || waterOnly(P, z)) v.ONVOS_P = { t: 'na' };
   else { const e = on[1].get(z); v.ONVOS_P = !e ? { t: 'miss' } : e.hasPower ? { t: 'num', n: e.power } : { t: 'empty' }; }
   return v;
 }
@@ -1479,10 +1481,11 @@ function srcRowsOf(o, P, z, tol) {
         : hasSrc(dpE) ? (dpE.src.get(k) ? (dpE.src.get(k).hasMass ? { t: 'num', n: dpE.src.get(k).mass } : { t: 'empty' }) : { t: 'miss' }) : { t: 'num', n: dpE.mass, all: keys.length > 1 },
       ONVOS: cell('ONVOS', on, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
       DVOS: cell('DVOS', dvShow, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
+      ONVOS_P: !on || wOnly ? { t: 'na' } : !a ? { t: 'miss' } : a.power != null ? { t: 'num', n: a.power } : { t: 'empty' },
       PEK: cell('PEK', pk, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }) };
     let st = 'ok';
     if ((b && a && Math.abs(b.mass - a.mass) > tol) || (c && a && a.power != null && c.hasMass && c.massMax - a.power > tol)) st = 'bad';
-    else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && d !== 'DPNVOS' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
+    else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && d !== 'DPNVOS' && d !== 'ONVOS_P' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
     const li = impOfZv(P, z);
     return { src: (a || bs || c || dpE?.src?.get(k)).label, srcKey: k, vals, status: st, imp: impOfSrc(a, li === 'both' ? '' : li) };
   });
@@ -1612,17 +1615,18 @@ function buildLines(M, findings) {
 }
 const VALID = { full: ['ok', 'ДВОС: входит'], partial: ['warnp', 'ДВОС: частично'], expired: ['fail', 'ДВОС: истекла'], future: ['fail', 'ДВОС: подана позже'], nodate: ['fail', 'ДВОС: нет даты'] };
 /* «Общие данные»: суммы по объекту и по веществам — ОНВОС AE (т), ДПНВОС V (т), ДВОС W (т), ПЭК W (т/год) */
-const TCOLS = [['ONVOS', 'ОНВОС AE, т'], ['DPNVOS', 'ДПНВОС V, т'], ['DVOS', 'ДВОС W, т'], ['PEK', 'ПЭК X, г/с']];
+const TCOLS = [['ONVOS', 'ОНВОС AE, т'], ['DPNVOS', 'ДПНВОС V, т'], ['DVOS', 'ДВОС W, т'], ['ONVOS_P', 'ОНВОС AD, г/с'], ['PEK', 'ПЭК X, г/с']];
 /* ПЭК — только факт наличия отчёта за год: зелёная галочка / красный крестик */
 const ynCell = v => `<span class="yn ${v ? 'y' : 'n'}" title="${v ? 'Отчёт ПЭК за год есть' : 'Отчёта ПЭК за год нет'}">${v ? '✓' : '✗'}</span>`;
 function totalsOf(o) {
-  const src = { ONVOS: o.on?.zv, DPNVOS: o.dp?.rep.zv, DVOS: o.dv?.rep.zv, PEK: o.pk?.rep.zv };
-  const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : e.hasMass ? e.mass : null, DVOS: e => e.hasMass ? e.mass : null, PEK: e => e.hasMass ? e.mass : null };
+  const src = { ONVOS: o.on?.zv, DPNVOS: o.dp?.rep.zv, DVOS: o.dv?.rep.zv, ONVOS_P: o.on?.zv, PEK: o.pk?.rep.zv };
+  const val = { ONVOS: e => e.hasMass ? e.mass : null, DPNVOS: e => e.hasTotal ? e.total : e.hasMass ? e.mass : null, DVOS: e => e.hasMass ? e.mass : null, ONVOS_P: e => e.hasPower ? e.power : null, PEK: e => e.hasMass ? e.mass : null };
   const zv = new Map();
   for (const [d] of TCOLS) if (src[d]) for (const [z, e] of src[d]) {
     let x = zv.get(z); if (!x) zv.set(z, x = { z, code: e.code, name: '', v: {}, air: false, water: false });
     if (!x.name && e.name) x.name = e.name;
     if (d === 'ONVOS' || d === 'DPNVOS') { x.air ||= e.air; x.water ||= e.water; }
+    if (d === 'ONVOS_P' && !e.hasPower) continue;
     const n = val[d](e); x.v[d] = n == null ? (x.v[d] ?? 'empty') : (typeof x.v[d] === 'number' ? x.v[d] : 0) + n;
   }
   return { has: Object.fromEntries(TCOLS.map(([d]) => [d, !!src[d]])), pek: !!o.pk, zv: [...zv.values()] };
