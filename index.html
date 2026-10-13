@@ -2222,9 +2222,9 @@ const inClaude = !!window.claude?.use;
 (async () => { try { downloads = window.claude?.use ? await window.claude.use('downloads') : null; } catch (e) { downloads = null; } updateExportBtn(); })();
 function updateExportBtn() { const ok = downloads || !inClaude; for (const b of document.querySelectorAll('[data-act="export"]')) { b.disabled = !ok; b.title = ok ? '' : 'Скачивание недоступно в этом окне просмотра'; } }
 const vText = v => !v || v.t === 'na' ? '' : v.t === 'miss' ? 'нет' : v.t === 'empty' ? 'пусто' : +Number(v.n).toPrecision(12);
-function buildReportWorkbook(R, V) {
-  const wb = XLSX.utils.book_new();
-  const sheet = (aoa, cols, name, filter) => { const s = XLSX.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; XLSX.utils.book_append_sheet(wb, s, name); };
+function buildReportWorkbook(R, V, X = XLSX) {
+  const wb = X.utils.book_new();
+  const sheet = (aoa, cols, name, filter) => { const s = X.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; X.utils.book_append_sheet(wb, s, name); return s; };
   const keys = V ? V.keys : null, inV = x => !keys || keys.has(x.objKey || x.key);
   const objs = R.objects.filter(inV), fnd = R.findings.filter(inV), lines = R.lines.filter(inV), D = V?.decl;
   const byCat = c => objs.filter(o => o.cat === c);
@@ -2259,15 +2259,34 @@ function buildReportWorkbook(R, V) {
   const srcAoa = [];
   for (const l of lines) if (l.srcs) for (const x of l.srcs) srcAoa.push([l.cat, l.code, l.inn, l.name, IMP_TXT[x.imp] || '', x.src, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.slice(1).map(c => vText(x.vals[c[0]])), LINE[x.status][1]]);
   srcAoa.sort((a, b) => String(a[1]).localeCompare(String(b[1])) || String(a[4]).localeCompare(String(b[4])) || srcCmp(String(a[5]), String(b[5])) || String(a[6]).localeCompare(String(b[6])));
-  sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Вид источника', 'Источник', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.slice(1).map(c => c[1]), 'Результат по источнику'], ...srcAoa],
+  const srcSheet = sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Вид источника', 'Источник', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.slice(1).map(c => c[1]), 'Результат по источнику'], ...srcAoa],
     [8, 19, 13, 36, 14, 12, 9, 10, 40, ...VCOLS.slice(1).map(() => 13), 26], 'По источникам', true);
+  /* строки с ошибкой — красным, с предупреждением — жёлтым (цвета видны, если загрузилась библиотека со стилями) */
+  const FILL = { [LINE.bad[1]]: 'FED7D7', [LINE.warn[1]]: 'FFF4CC' }, nc = srcAoa[0] ? srcAoa[0].length : 0;
+  srcAoa.forEach((r, i) => { const rgb = FILL[r[r.length - 1]]; if (!rgb) return;
+    for (let c = 0; c < nc; c++) { const a = colName(c) + (i + 2); const cell = srcSheet[a] || (srcSheet[a] = { t: 's', v: '' }); cell.s = { fill: { patternType: 'solid', fgColor: { rgb } } }; } });
   return wb;
+}
+/* библиотека SheetJS со стилями (xlsx-js-style) — подгружается при первой выгрузке, чтобы раскрасить строки; не загрузилась — выгрузка без цвета */
+let styledLib = null;
+function loadStyledXlsx() {
+  if (styledLib) return styledLib;
+  styledLib = new Promise(res => {
+    const orig = window.XLSX, sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js';
+    const done = ok => { const lib = window.XLSX; window.XLSX = orig; res(ok && lib && lib !== orig && lib.utils ? lib : null); };
+    sc.onload = () => done(true); sc.onerror = () => done(false);
+    setTimeout(() => done(false), 15000);
+    document.head.appendChild(sc);
+  });
+  return styledLib;
 }
 async function exportReport(scope) {
   const R = state.result; if (!R || (!downloads && inClaude)) return;
   toast('Готовлю файл отчёта…'); await new Promise(res => setTimeout(res, 60));
   const V = scope === 'decl' ? currentView() : null; const v = V && !V.notFound ? V : null;
-  const buf = XLSX.write(buildReportWorkbook(R, v), { bookType: 'xlsx', type: 'array', compression: true });
+  const XS = await loadStyledXlsx(), X = XS || XLSX;
+  const buf = X.write(buildReportWorkbook(R, v, X), { bookType: 'xlsx', type: 'array', compression: true });
   const d = R.at, p = n => String(n).padStart(2, '0'), tag = v?.decl ? '_' + v.decl.no : v?.none ? '_bez_deklaracii' : '_vse';
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const fname = `Sverka_NVOS_${R.settings.year}${tag}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.xlsx`;
