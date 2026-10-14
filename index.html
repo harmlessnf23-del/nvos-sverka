@@ -660,6 +660,18 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 /* v54: принятые из файла, выгрузка списка */
 .acc-bar{gap:8px 12px}
 .acc-hint{font-size:13px;line-height:1.45}
+/* v57: больше числовых столбцов — ужимаем */
+.ftbl td.v,.ftbl th.vh{padding-left:5px;padding-right:5px}
+.ftbl th.vh{font-size:12.5px}
+.ftbl td.v{font-size:12.5px}
+.ftbl td.note,.ftbl td.desc{min-width:90px}
+.ftbl td.zv{min-width:80px}
+.ftbl td.obj{white-space:normal}
+.ftbl td.obj .cpy-code{white-space:nowrap;font-size:12px}
+@container (max-width:1060px){.ftbl td.v,.ftbl th.vh{font-size:12px;padding-left:4px;padding-right:4px}}
+.ftbl .kind{white-space:normal}
+.ws-detail{container-type:inline-size}
+@container (max-width:980px){.ftbl th,.ftbl td{padding-left:4px;padding-right:4px}.ftbl td.v,.ftbl th.vh{font-size:12px}.ftbl th{font-size:12.5px}.ftbl td.zv{min-width:70px}.ftbl td.note,.ftbl td.desc{min-width:80px}.ftbl td.sev{font-size:13px}}
 /* v53: принятие декларации */
 .decl-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
 .decl-acts .btn.primary svg{color:#fff}
@@ -836,8 +848,15 @@ const DOC_TYPES = {
 };
 /* отдельные карточки загрузки: ДПНВОС и ПЭК — выбросы и сбросы разными файлами; реестр ОНВОС и ДВОС — общие.
    В сверке файлы выбросов и сбросов объединяются, у каждой строки остаётся пометка _imp (air / water). */
+const DPN_PREF = {
+  air: { mass: [22, 'Масса для сверки, т (W)'], massVrv: [23, 'В пределах ВРВ, т (X)'], massOver: [24, 'Сверх лимита, т (Y)'] },
+  water: { mass: [23, 'Масса для сверки, т (X)'], massVrv: [24, 'В пределах ВРС, т (Y)'], massOver: [25, 'Сверх лимита, т (Z)'] },
+};
 for (const [b, imp, suf] of [['DPNVOS', 'air', 'A'], ['DPNVOS', 'water', 'W'], ['PEK', 'air', 'A'], ['PEK', 'water', 'W']])
-  DOC_TYPES[b + '_' + suf] = { ...DOC_TYPES[b], base: b, imp, sub: imp === 'air' ? 'выбросы' : 'сбросы' };
+  DOC_TYPES[b + '_' + suf] = { ...DOC_TYPES[b], base: b, imp, sub: imp === 'air' ? 'выбросы' : 'сбросы',
+    /* ДПНВОС: масса для сверки — выбросы столбец W, сбросы столбец X (если такой столбец в файле есть, он важнее поиска по названию) */
+    /* для «Сверхлимита»: выбросы — X (в пределах ВРВ) и Y (сверх лимита), сбросы — Y (в пределах ВРС) и Z (сверх лимита) */
+    fields: b === 'DPNVOS' ? DOC_TYPES[b].fields.map(f => { const P = DPN_PREF[imp][f.key]; return P ? { ...f, prefCol: P[0], label: P[1] } : f; }) : DOC_TYPES[b].fields };
 const baseOf = d => DOC_TYPES[d].base || d;
 const slotsOfBase = b => DOCS.filter(d => baseOf(d) === b);
 const recsOfBase = b => slotsOfBase(b).flatMap(d => slotOf(d)?.records || []);
@@ -1126,7 +1145,9 @@ function headersOf(slot) {
 function automap(docId, headers) {
   const m = {}, used = new Set();
   const hs = headers.map(h => nk(h.replace(/^[A-Z]+ · /, '')));
-  for (const f of DOC_TYPES[docId].fields) for (const a of f.aliases) {
+  /* закреплённые столбцы (prefCol) — если столбец есть и у него есть заголовок */
+  for (const f of DOC_TYPES[docId].fields) if (f.prefCol != null && f.prefCol < headers.length && hs[f.prefCol]) { m[f.key] = f.prefCol; used.add(f.prefCol); }
+  for (const f of DOC_TYPES[docId].fields) if (m[f.key] == null) for (const a of f.aliases) {
     const na = nk(a), j = hs.findIndex((h, i) => !used.has(i) && h.includes(na));
     if (j >= 0) { m[f.key] = j; used.add(j); break; }
   }
@@ -1159,7 +1180,7 @@ async function openFile(docId, file, saved) {
     slot.headerRow = saved && saved.headerRow >= 0 && saved.headerRow < 30 ? saved.headerRow : detectHeaderRow(slot.preview);
     slot.headers = headersOf(slot);
     /* до версии 48 у ПЭК по умолчанию брался столбец W (ПДВ), у ДПНВОС не было кода источника — такие сохранённые сопоставления пересобираются */
-    const oldPek = saved && ((baseOf(docId) === 'PEK' || baseOf(docId) === 'DPNVOS') && !(saved.mv >= 48) || docId === 'ONVOS' && !(saved.mv >= 49));
+    const oldPek = saved && ((baseOf(docId) === 'PEK' || baseOf(docId) === 'DPNVOS') && !(saved.mv >= 48) || docId === 'ONVOS' && !(saved.mv >= 49) || baseOf(docId) === 'DPNVOS' && !(saved.mv >= 56));
     slot.map = saved && saved.map && !oldPek ? savedMap(saved.map, slot.headers.length) : automap(docId, slot.headers);
     if (!saved) dbPutFile(docId, file);
     await loadRows(docId, slot);
@@ -1203,7 +1224,7 @@ async function loadRows(docId, slot) {
   for (let i = 0; i < n; i++) { const r = { _row: rowNums[i] }; if (imp) r._imp = imp; for (let k = 0; k < fields.length; k++) r[fields[k]] = getters[k](i); recs[i] = r; }
   colsData = null;
   slot.records = recs; slot.loading = null;
-  if (!slot.demo) dbPutCfg(docId, { name: slot.fileName, sheet: slot.sheet, headerRow: slot.headerRow, map: { ...slot.map }, mv: 49 });
+  if (!slot.demo) dbPutCfg(docId, { name: slot.fileName, sheet: slot.sheet, headerRow: slot.headerRow, map: { ...slot.map }, mv: 56 });
   touchDoc(docId); autoYear(); renderParams(); renderDeclBar(); renderSlots(); renderReport(); renderRunState();
 }
 async function reHead(docId, slot) {
@@ -1254,9 +1275,9 @@ const impOfText = v => { const s = String(v ?? '').toLowerCase(); return s.inclu
 
 /* выбросы и сбросы — отдельные файлы: по каждому виду берётся последний отчёт, вещества объединяются */
 function mergeZvE(t, e) {
-  t.mass += e.mass; t.hasMass ||= e.hasMass; t.massEmpty ||= e.massEmpty; t.over += e.over; t.vrv += e.vrv; t.total += e.total; t.hasTotal ||= e.hasTotal;
+  t.mass += e.mass; t.hasMass ||= e.hasMass; t.massEmpty ||= e.massEmpty; t.over += e.over; t.vrv += e.vrv; t.hasOver ||= e.hasOver; t.hasVrv ||= e.hasVrv; t.total += e.total; t.hasTotal ||= e.hasTotal;
   t.year += e.year; t.hasYear ||= e.hasYear; t.rows = t.rows.concat(e.rows); t.air ||= e.air; t.water ||= e.water;
-  if (e.src) { t.src = new Map(t.src || []); for (const [k, x] of e.src) { const y = t.src.get(k); t.src.set(k, !y ? x : { ...y, mass: y.mass + x.mass, hasMass: y.hasMass || x.hasMass, rows: y.rows.concat(x.rows), air: y.air || x.air, water: y.water || x.water }); } }
+  if (e.src) { t.src = new Map(t.src || []); for (const [k, x] of e.src) { const y = t.src.get(k); t.src.set(k, !y ? x : { ...y, mass: y.mass + x.mass, hasMass: y.hasMass || x.hasMass, over: (y.over || 0) + (x.over || 0), hasOver: y.hasOver || x.hasOver, vrv: (y.vrv || 0) + (x.vrv || 0), hasVrv: y.hasVrv || x.hasVrv, rows: y.rows.concat(x.rows), air: y.air || x.air, water: y.water || x.water }); } }
 }
 function mergeLatest(reports, latest) {
   const byImp = new Map(); for (const R of reports.values()) { const g = byImp.get(R.imp || '') || byImp.set(R.imp || '', new Map()).get(R.imp || ''); g.set(R.no + '|' + g.size, R); }
@@ -1296,7 +1317,8 @@ function analyze(S) {
     if (!e) { e = { code: String(r.zvCode).trim(), name: r.zvName ? String(r.zvName).trim() : '', mass: 0, hasMass: false, massEmpty: false, over: 0, vrv: 0, total: 0, hasTotal: false, year: 0, hasYear: false, rows: [], air: false, water: false }; map.set(z, e); }
     if (m == null) e.massEmpty = true; else { e.mass += m; e.hasMass = true; }
     if (!e.name && r.zvName) e.name = String(r.zvName).trim();
-    e.over += num(r.massOver) || 0; e.vrv += num(r.massVrv) || 0;
+    const mo = num(r.massOver), mv = num(r.massVrv);
+    if (mo != null) { e.over += mo; e.hasOver = true; } if (mv != null) { e.vrv += mv; e.hasVrv = true; }
     const mt = num(r.massTotal); if (mt != null) { e.total += mt; e.hasTotal = true; }
     const my = num(r.massYear); if (my != null) { e.year += my; e.hasYear = true; }
     if (imp === 'water') e.water = true; else if (imp === 'air') e.air = true;
@@ -1310,6 +1332,7 @@ function analyze(S) {
       let x = e.src.get(sk);
       if (!x) e.src.set(sk, x = { label: String(r.sourceNo).trim(), mass: 0, hasMass: false, massMax: null, power: null, rows: [], air: false, water: false });
       if (imp === 'water') x.water = true; else if (imp === 'air') x.air = true;
+      if (mo != null) { x.over = (x.over || 0) + mo; x.hasOver = true; } if (mv != null) { x.vrv = (x.vrv || 0) + mv; x.hasVrv = true; }
       if (m != null) { x.mass += m; x.hasMass = true; x.massMax = x.massMax == null ? m : Math.max(x.massMax, m); }
       if (pw != null) x.power = x.power == null ? pw : Math.max(x.power, pw);
       x.rows.push(r._row);
@@ -1381,7 +1404,7 @@ function analyze(S) {
       if (!other.has(k2)) continue;
       R.zv.delete(k);
       const t = R.zv.get(k2);
-      if (t) { t.mass += e.mass; t.hasMass ||= e.hasMass; t.massEmpty ||= e.massEmpty; t.over += e.over; t.vrv += e.vrv; t.total += e.total; t.hasTotal ||= e.hasTotal; t.rows.push(...e.rows); t.air ||= e.air; t.water ||= e.water; }
+      if (t) { t.mass += e.mass; t.hasMass ||= e.hasMass; t.massEmpty ||= e.massEmpty; t.over += e.over; t.vrv += e.vrv; t.hasOver ||= e.hasOver; t.hasVrv ||= e.hasVrv; t.total += e.total; t.hasTotal ||= e.hasTotal; t.rows.push(...e.rows); t.air ||= e.air; t.water ||= e.water; }
       else R.zv.set(k2, { ...e, dpCode: e.code });
     }
   }
@@ -1455,7 +1478,7 @@ function zvInfo(P, z) {
   if (dp && dp.dpCode && dp.dpCode !== code) code = `${code} (ДПНВОС: ${dp.dpCode})`;
   return { zvCode: code ?? z, zvName: name, zvKey: z };
 }
-const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т'], ['ONVOS_P', 'ОНВОС AD, г/с'], ['PEK', 'ПЭК X, г/с']];
+const VCOLS = [['DPNVOS', 'ДПНВОС W, т'], ['DPNVOS_VRV', 'ДПНВОС лимит, т'], ['DPNVOS_OVER', 'ДПНВОС сверх, т'], ['ONVOS', 'ОНВОС AE, т'], ['DVOS', 'ДВОС, т'], ['ONVOS_P', 'ОНВОС AD, г/с'], ['PEK', 'ПЭК X, г/с']];
 function valsOf(o, P, z) {
   /* значения показываются из всех документов объекта, даже если документ не участвует в сверке для его категории
      (например, ДВОС у объекта III категории) — вместо прочерка видно число */
@@ -1466,6 +1489,10 @@ function valsOf(o, P, z) {
     const e = zv.get(z);
     v[d] = !e ? (p ? { t: 'miss' } : { t: 'na' }) : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass };
   }
+  /* ДПНВОС: в пределах ВРВ/ВРС (выбросы X, сбросы Y) и сверх лимита (выбросы Y, сбросы Z) — рядом с массой */
+  { const dz = (has('DPNVOS')?.[1] || own.DPNVOS)?.get(z);
+    v.DPNVOS_VRV = !dz ? (v.DPNVOS.t === 'miss' ? { t: 'miss' } : { t: 'na' }) : dz.hasVrv ? { t: 'num', n: dz.vrv } : { t: 'na' };
+    v.DPNVOS_OVER = !dz ? (v.DPNVOS.t === 'miss' ? { t: 'miss' } : { t: 'na' }) : dz.hasOver ? { t: 'num', n: dz.over } : { t: 'na' }; }
   /* ПЭК — справочно (не участвует в сверке): берётся отчёт ПЭК объекта за год */
   if (!o.pk) v.PEK = o.cat === 'III' ? { t: 'miss' } : { t: 'na' };
   else { const e = o.pk.rep.zv.get(z); v.PEK = !e ? (waterOnly(P, z) && !slotOf('PEK_W')?.records ? { t: 'na' } : { t: 'miss' }) : (e.massEmpty && !e.hasMass) ? { t: 'empty' } : { t: 'num', n: e.mass }; }
@@ -1492,7 +1519,9 @@ function srcRowsOf(o, P, z, tol) {
     /* в ДПНВОС нет номеров источников: при одном источнике — масса вещества, при нескольких — общая масса с пометкой Σ */
     const dpE = g('DPNVOS')?.[1].get(z);
     /* если в ДПНВОС есть код источника — масса по источнику; иначе масса вещества (при нескольких источниках — с пометкой Σ) */
-    const vals = { DPNVOS: !g('DPNVOS') ? { t: 'na' } : !dpE ? { t: 'miss' } : (dpE.massEmpty && !dpE.hasMass) ? { t: 'empty' }
+    const dpS = dpE && hasSrc(dpE) ? dpE.src.get(k) : null;
+    const dpPart = (key, hk) => !g('DPNVOS') || !dpE ? { t: dpE || !g('DPNVOS') ? 'na' : 'miss' } : hasSrc(dpE) ? (dpS && dpS[hk] ? { t: 'num', n: dpS[key] } : { t: dpS ? 'na' : 'miss' }) : dpE[hk] ? { t: 'num', n: dpE[key], all: keys.length > 1 } : { t: 'na' };
+    const vals = { DPNVOS_VRV: dpPart('vrv', 'hasVrv'), DPNVOS_OVER: dpPart('over', 'hasOver'), DPNVOS: !g('DPNVOS') ? { t: 'na' } : !dpE ? { t: 'miss' } : (dpE.massEmpty && !dpE.hasMass) ? { t: 'empty' }
         : hasSrc(dpE) ? (dpE.src.get(k) ? (dpE.src.get(k).hasMass ? { t: 'num', n: dpE.src.get(k).mass } : { t: 'empty' }) : { t: 'miss' }) : { t: 'num', n: dpE.mass, all: keys.length > 1 },
       ONVOS: cell('ONVOS', on, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
       DVOS: cell('DVOS', dvShow, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }),
@@ -1500,7 +1529,7 @@ function srcRowsOf(o, P, z, tol) {
       PEK: cell('PEK', pk, k, x => x.hasMass ? { t: 'num', n: x.mass } : { t: 'empty' }) };
     let st = 'ok';
     if ((b && a && Math.abs(b.mass - a.mass) > tol) || (c && a && a.power != null && c.hasMass && c.massMax - a.power > tol)) st = 'bad';
-    else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && d !== 'DPNVOS' && d !== 'ONVOS_P' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
+    else if (Object.entries(vals).some(([d, v]) => d !== 'PEK' && !d.startsWith('DPNVOS') && d !== 'ONVOS_P' && (v.t === 'miss' || v.t === 'empty')) || (c && a && a.power != null && c.hasMass && a.power - c.massMax > tol)) st = 'warn';
     const li = impOfZv(P, z);
     return { src: (a || bs || c || dpE?.src?.get(k)).label, srcKey: k, vals, status: st, imp: impOfSrc(a, li === 'both' ? '' : li) };
   });
@@ -1577,7 +1606,7 @@ function checkObject(o, M) {
     if (dp && on) {
       if (isEmpty(dp) || isEmpty(on)) parts.push({ sev: 'error', kind: 'Пусто', msg: `масса не указана в ${isEmpty(dp) ? 'ДПНВОС' : 'ОНВОС (AE)'}` });
       else { const dd = dp.mass - on.mass;
-        if (dd > tol) parts.push({ sev: 'error', kind: 'Сверхлимит', msg: `ДПНВОС больше реестра на ${fmtNum(+dd.toPrecision(6))} т` + (dp.over ? `; в ДПНВОС сверх лимита ${fmtNum(dp.over)} т` : '') + (dp.vrv ? `; в пределах ВРВ ${fmtNum(dp.vrv)} т` : '') });
+        if (dd > tol) parts.push({ sev: 'error', kind: 'Сверхлимит', msg: `ДПНВОС больше реестра на ${fmtNum(+dd.toPrecision(6))} т` + (dp.over ? `; в ДПНВОС сверх лимита ${fmtNum(dp.over)} т` : '') + (dp.vrv ? `; в пределах ${dp.water && !dp.air ? 'ВРС' : 'ВРВ'} ${fmtNum(dp.vrv)} т` : '') });
         else if (dd < -tol) parts.push({ sev: 'warning', kind: 'Меньше реестра', cls: 'k-low', msg: `ДПНВОС меньше реестра на ${fmtNum(+(-dd).toPrecision(6))} т` }); }
     }
     if (dv) {
@@ -2347,10 +2376,10 @@ function buildReportWorkbook(R, V, X = XLSX) {
   sheet([head, ...lines.filter(l => l.status === 'ok').map(toRow)], w, 'Прошли проверки', true);
   sheet([head, ...lines.map(toRow)], w, 'Сверка по веществам', true);
   const srcAoa = [];
-  for (const l of lines) if (l.srcs) for (const x of l.srcs) srcAoa.push([l.cat, l.code, l.inn, l.name, IMP_TXT[x.imp] || '', x.src, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.slice(1).map(c => vText(x.vals[c[0]])), LINE[x.status][1]]);
+  for (const l of lines) if (l.srcs) for (const x of l.srcs) srcAoa.push([l.cat, l.code, l.inn, l.name, IMP_TXT[x.imp] || '', x.src, l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.map(c => vText(x.vals[c[0]])), LINE[x.status][1]]);
   srcAoa.sort((a, b) => String(a[1]).localeCompare(String(b[1])) || String(a[4]).localeCompare(String(b[4])) || srcCmp(String(a[5]), String(b[5])) || String(a[6]).localeCompare(String(b[6])));
-  const srcSheet = sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Вид источника', 'Источник', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.slice(1).map(c => c[1]), 'Результат по источнику'], ...srcAoa],
-    [8, 19, 13, 36, 14, 12, 9, 10, 40, ...VCOLS.slice(1).map(() => 13), 26], 'По источникам', true);
+  const srcSheet = sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Вид источника', 'Источник', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Результат по источнику'], ...srcAoa],
+    [8, 19, 13, 36, 14, 12, 9, 10, 40, ...VCOLS.map(() => 13), 26], 'По источникам', true);
   /* строки с ошибкой — красным, с предупреждением — жёлтым (цвета видны, если загрузилась библиотека со стилями) */
   const FILL = { [LINE.bad[1]]: 'FED7D7', [LINE.warn[1]]: 'FFF4CC' }, nc = srcAoa[0] ? srcAoa[0].length : 0;
   srcAoa.forEach((r, i) => { const rgb = FILL[r[r.length - 1]]; if (!rgb) return;
