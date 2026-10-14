@@ -657,6 +657,14 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .ftbl tr.warning td.sev::before{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:8px;height:7px;background:var(--warn-fill)}
 .cnt-w::before,.pill.warnp::before{content:"";display:inline-block;width:7px;height:6px;margin-right:4px;vertical-align:1px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)}
 .prob .bar i.w{background:var(--warn-fill)}
+/* v52: фильтр по категориям в списке деклараций */
+.dcatbar{gap:8px 12px}
+.segm.dcats button{min-width:44px;justify-content:center}
+/* v51: копирование кода объекта */
+.cpy.cpy-code{font-size:inherit;font-weight:inherit;color:inherit;margin-left:-7px;white-space:nowrap}
+.cpy.cpy-code svg{opacity:.55}
+.cpy.cpy-code:hover svg{opacity:1}
+.ftbl tr.grp .cpy.cpy-code{margin-left:-4px}
 /* v47: масса по всем источникам (ДПНВОС без разбивки) */
 .ftbl td.v.allsrc{color:var(--muted)}
 .ftbl td.v.allsrc small{font-size:11px;font-weight:600}
@@ -1205,7 +1213,7 @@ async function reHead(docId, slot) {
    Сверка идёт сразу по всем категориям, результат смотрится в разрезе декларации.
    ===================================================================== */
 const DOCS = ['ONVOS', 'DPNVOS_A', 'DPNVOS_W', 'DVOS', 'PEK_A', 'PEK_W'];
-const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', imp: 'all', dfl: 'all', dsort: 'issues', hideAcc: false, listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
+const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', imp: 'all', dfl: 'all', dsort: 'issues', hideAcc: false, dcats: [], listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
 const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001, decl: '' };
 const slotOf = d => state.pool[d];
 const poolKey = d => d;
@@ -1696,8 +1704,8 @@ function applyRail() {
   app.classList.toggle('collapsed', c);
   const t = $('#rail-toggle'); if (t) { t.setAttribute('aria-expanded', String(!c)); const l = c ? 'Развернуть меню' : 'Свернуть меню'; t.setAttribute('aria-label', l); t.title = l; }
 }
-try { const v = JSON.parse(localStorage.getItem('sverka-list') || '{}'); if (v.dsort in DSORT_KEYS) state.dsort = v.dsort; state.hideAcc = !!v.hideAcc; } catch (e) {}
-function saveListPrefs() { try { localStorage.setItem('sverka-list', JSON.stringify({ dsort: state.dsort, hideAcc: state.hideAcc })); } catch (e) {} }
+try { const v = JSON.parse(localStorage.getItem('sverka-list') || '{}'); if (v.dsort in DSORT_KEYS) state.dsort = v.dsort; state.hideAcc = !!v.hideAcc; if (Array.isArray(v.dcats)) state.dcats = v.dcats.filter(c => ['I', 'II', 'III', 'IV', '—'].includes(c)); } catch (e) {}
+function saveListPrefs() { try { localStorage.setItem('sverka-list', JSON.stringify({ dsort: state.dsort, hideAcc: state.hideAcc, dcats: state.dcats })); } catch (e) {} }
 try { const v = localStorage.getItem('sverka-rail'); state.railCollapsed = v == null ? innerWidth < 1200 : v === '1'; } catch (e) { state.railCollapsed = innerWidth < 1200; }
 /* боковое меню */
 const NAV_ICON = {
@@ -1830,12 +1838,14 @@ const CATS = ['I', 'II', 'III', 'IV', '—'];
 /* ИНН с кнопкой копирования: клик копирует ИНН в буфер обмена и не открывает строку */
 const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
 const innBtns = inns => inns.filter(Boolean).map(i => `<button type="button" class="cpy" data-act="copy" data-v="${esc(i)}" title="Скопировать ИНН">ИНН ${esc(i)}${COPY_ICON}</button>`).join(' ') || '<span class="note">ИНН не указан</span>';
-async function copyText(v) {
+/* код объекта с копированием по клику (строку при этом не открывает) */
+const codeBtn = c => c ? `<button type="button" class="cpy cpy-code" data-act="copy" data-kind="Код объекта" data-v="${esc(c)}" title="Скопировать код объекта">${esc(c)}${COPY_ICON}</button>` : '';
+async function copyText(v, kind = 'ИНН') {
   let ok = false;
   try { await navigator.clipboard.writeText(v); ok = true; } catch (e) {
     try { const t = document.createElement('textarea'); t.value = v; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); ok = document.execCommand('copy'); t.remove(); } catch (e2) { ok = false; }
   }
-  toast(ok ? `ИНН ${v} скопирован` : 'Не удалось скопировать — выделите ИНН вручную');
+  toast(ok ? `${kind} ${v} скопирован` : `Не удалось скопировать — выделите ${kind === 'ИНН' ? 'ИНН' : 'код'} вручную`);
   return ok;
 }
 /* дата актуализации объекта в реестре (столбец G): после отчётного года — оранжевым, в отчётном году — синим */
@@ -2064,7 +2074,10 @@ function renderSummary(R) {
 }
 function renderDeclList(R, stale) {
   const q = state.listQ.trim().toLowerCase();
-  const base = R.decls.filter(d => (!state.hideAcc || !isAccepted(d)) && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)));
+  /* фильтр по категориям: декларация показывается, если ВСЕ её объекты — из выбранных категорий (II → только декларации с одними объектами II) */
+  const catOk = d => { const ks = Object.keys(d.cats); return !state.dcats.length || (ks.length > 0 && ks.every(c => state.dcats.includes(c))); };
+  const catPresent = CATS.filter(c => R.decls.some(d => d.cats[c]));
+  const base = R.decls.filter(d => catOk(d) && (!state.hideAcc || !isAccepted(d)) && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)));
   const nI = base.filter(hasIssues).length, nC = base.length - nI;
   const list = base.filter(d => state.dfl === 'all' || (state.dfl === 'err' ? hasIssues(d) : !hasIssues(d))).sort((DSORT[state.dsort] || DSORT.issues)[1]);
   const noDecl = R.objects.filter(o => !o.decls.length);
@@ -2081,6 +2094,13 @@ function renderDeclList(R, stale) {
       <div class="stat warn"><b>${(R.findings.length - errs).toLocaleString('ru-RU')}</b><span>предупреждений</span></div>
     </div>
     <div class="tabs" role="tablist">${[['decls', 'Декларации'], ['summary', 'Общие данные']].map(([id, t]) => `<button role="tab" data-act="top" data-id="${id}" aria-selected="${state.top === id}">${t}</button>`).join('')}</div>
+    <div class="filters dcatbar"><span class="impbar-l">Категории объектов</span>
+      <div class="segm dcats" role="group" aria-label="Категории объектов">
+        <button type="button" data-act="dcat" data-id="all" aria-pressed="${!state.dcats.length}">Все</button>
+        ${catPresent.map(c => `<button type="button" data-act="dcat" data-id="${c}" aria-pressed="${state.dcats.includes(c)}" title="${c === '—' ? 'Объекты без категории' : c + ' категория'}">${state.dcats.includes(c) ? '✓ ' : ''}${c === '—' ? 'б/к' : c}</button>`).join('')}
+      </div>
+      <span class="note">${state.dcats.length ? `только декларации, где все объекты — ${state.dcats.map(c => c === '—' ? 'б/к' : c).join(', ')} · найдено ${base.length.toLocaleString('ru-RU')}` : 'можно выбрать несколько'}</span>
+    </div>
     <div class="filters dfilters">
       <div class="segm" role="group" aria-label="Замечания">${[['all', 'Все', base.length], ['err', 'С замечаниями', nI], ['clean', 'Без замечаний', nC]].map(([id, t, n]) => `<button type="button" data-act="dfl" data-id="${id}" aria-pressed="${state.dfl === id}">${t} <small>${n.toLocaleString('ru-RU')}</small></button>`).join('')}</div>
       <label for="dsort" class="sr">Сортировка</label><select id="dsort" aria-label="Сортировка">${Object.entries(DSORT).map(([k, [t]]) => `<option value="${k}" ${state.dsort === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
@@ -2122,7 +2142,7 @@ function renderTable() {
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const shown = list.slice(0, 1500);
     $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Объект</th><th>Реестр</th><th>Декларация</th><th>ДВОС / ПЭК / IV</th><th title="Число веществ: ДПНВОС / ОНВОС / ДВОС / ПЭК">ЗВ: ДП/ОН/ДВ/ПЭК</th><th>Итог</th></tr></thead><tbody>
-      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}" tabindex="0" title="Открыть вещества объекта"><td class="objc"><span class="obj-l">${catCell(o.cat)}<span class="obj-c">${esc(o.code)}</span></span><small>${esc(o.name)}</small><small class="mono">ИНН ${esc(o.inn)}</small>${srcLine(o)}</td>
+      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}" tabindex="0" title="Открыть вещества объекта"><td class="objc"><span class="obj-l">${catCell(o.cat)}<span class="obj-c">${codeBtn(o.code)}</span></span><small>${esc(o.name)}</small><small class="mono">ИНН ${esc(o.inn)}</small>${srcLine(o)}</td>
         <td>${o.inReg ? (o.dateOut ? `исключён ${fmtDate(o.dateOut)}` : 'есть') + updCell(o.dateUpd, Y) : '<span class="pill fail">нет</span>'}</td>
         <td class="num">${o.dpNo ? esc(o.dpNo) : '<span class="pill fail">нет</span>'}</td>
         <td><span class="pill ${o.third[0]}">${esc(o.third[1])}</span>${o.dvNo ? `<small class="note blk">№ ${esc(o.dvNo)} · ${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</small>` : ''}${o.cat === 'III' && o.pkNo ? `<small class="note blk">№ ${esc(o.pkNo)}</small>` : ''}</td>
@@ -2153,7 +2173,7 @@ function renderTable() {
         const g = r.l.objKey + '|' + r.sk + '|' + (r.sk ? '' : r.imp);
         if (g !== prev) { prev = g; const n = rows.filter(x => x.l.objKey === r.l.objKey && x.sk === r.sk && (r.sk || x.imp === r.imp)).length;
           const kind = r.imp === 'air' ? 'источник выбросов' : r.imp === 'water' ? 'источник сбросов' : 'источник';
-          html += `<tr class="grp grp-${r.imp || 'na'}"><td colspan="${4 + VCOLS.length}">${r.imp === 'air' || r.imp === 'water' ? IMP_ICON[r.imp] + ' ' : ''}${esc(r.l.code)} · ${r.sk ? kind + ' ' + esc(r.src) : (r.imp === 'air' ? 'выбросы' : r.imp === 'water' ? 'сбросы' : 'вещества') + ' без номера источника'}<small>${esc(r.l.name)} · веществ: ${n}</small></td></tr>`; }
+          html += `<tr class="grp grp-${r.imp || 'na'}"><td colspan="${4 + VCOLS.length}">${r.imp === 'air' || r.imp === 'water' ? IMP_ICON[r.imp] + ' ' : ''}${codeBtn(r.l.code)} · ${r.sk ? kind + ' ' + esc(r.src) : (r.imp === 'air' ? 'выбросы' : r.imp === 'water' ? 'сбросы' : 'вещества') + ' без номера источника'}<small>${esc(r.l.name)} · веществ: ${n}</small></td></tr>`; }
         html += `<tr><td>${pill(r.status)}<small class="note blk">${r.l.cat} кат.</small></td><td class="obj">${r.sk ? 'ист. ' + esc(r.src) : '—'}<small>${esc(r.l.code)}</small></td>
           <td class="zv"><span class="mono">${esc(r.l.zvCode)}</span>${hazTag(r.l.zvKey)}<small>${esc(r.l.zvName)}</small></td>${VCOLS.map(c => valCell(r.vals[c[0]])).join('')}<td class="note">${esc(r.note || '')}</td></tr>`;
       }
@@ -2165,7 +2185,7 @@ function renderTable() {
       ${shown.map(l => { const id = l.objKey + '|' + l.zvKey, open = l.srcs && state.openLines.has(id);
         const ss = srcsOf(l);
         return `<tr${ss && ss.length ? ` class="rowlink${open ? ' open' : ''}" data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}<small class="note blk">${l.cat} кат.</small></td>
-        <td class="obj">${esc(l.code)}<small>${esc(l.name)}</small></td>
+        <td class="obj">${codeBtn(l.code)}<small>${esc(l.name)}</small></td>
         <td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}<small>${esc(l.zvName)}</small>${state.imp === 'all' && l.imp ? `<small class="blk">${impTag(l.imp)}</small>` : ''}${ss && ss.length ? `<span class="srcn">источников: ${ss.length}</span>` : ''}</td>
         ${VCOLS.map(c => valCell(l.vals[c[0]])).join('')}<td class="note">${esc(l.note)}</td></tr>` +
         (open && ss ? ss.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td class="obj">${x.imp === 'water' ? 'ист. сбросов' : x.imp === 'air' ? 'ист. выбросов' : 'источник'} ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
@@ -2178,7 +2198,7 @@ function renderTable() {
   const shown = list.slice(0, 1500);
   $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Уровень</th><th>Объект</th><th>ЗВ</th>${VCOLS.map(c => `<th class="vh">${thl(c[1])}</th>`).join('')}<th>Описание</th></tr></thead><tbody>
     ${shown.map(x => `<tr class="${x.severity}"><td class="sev">${SEV[x.severity] === 'Предупреждение' ? 'Предупр.' : SEV[x.severity]}<small class="note blk mono" title="${esc(CHECKS[x.check])}">${esc(x.ruleId)}</small></td>
-      <td class="obj">${esc(x.objectCode || '')}<small>${esc(x.objectName || x.inn || '')}</small></td>
+      <td class="obj">${codeBtn(x.objectCode)}<small>${esc(x.objectName || x.inn || '')}</small></td>
       <td class="zv"><span class="mono">${esc(x.zvCode || '')}</span>${hazTag(x.zvKey)}<small>${esc(x.zvName || '')}</small></td>
       ${x.vals ? VCOLS.map(c => valCell(x.vals[c[0]])).join('') : VCOLS.map(() => '<td></td>').join('')}
       <td class="desc">${x.kind ? `<span class="kind ${x.kindCls || ''}">${esc(x.kind)}</span><br>` : ''}${esc(x.message)}${x.doc ? `<small class="note blk">${short(x.doc)}${x.row ? ', строка ' + x.row : ''}</small>` : ''}</td></tr>`).join('')}
@@ -2425,7 +2445,7 @@ async function restoreSaved() {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const act = el.dataset.act, d = el.dataset.doc;
-  if (act === 'copy') { e.stopPropagation(); copyText(el.dataset.v).then(ok => { if (ok) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); } }); return; }
+  if (act === 'copy') { e.stopPropagation(); copyText(el.dataset.v, el.dataset.kind || 'ИНН').then(ok => { if (ok) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); } }); return; }
   if (act === 'remove') { const s = slotOf(d); if (s?.worker) s.worker.terminate(); delete state.pool[d]; dbDelDoc(d); touchDoc(); renderParams(); renderSlots(); renderReport(); renderRunState(); }
   else if (act === 'demo') { loadDemo(); for (const dd of DOCS) dbPutDemo(dd); renderParams(); renderSlots(); renderReport(); toast('Загружены примеры — замените их своими файлами'); }
   else if (act === 'clear' && !confirm('Убрать все загруженные файлы и результат проверки?')) return;
@@ -2446,6 +2466,7 @@ document.addEventListener('click', e => {
   else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.imp = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {}; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
   else if (act === 'wsf') { state.wsf = el.dataset.id; renderSummary(state.result); }
   else if (act === 'dfl') { state.dfl = el.dataset.id; renderReport(); }
+  else if (act === 'dcat') { const c = el.dataset.id; if (c === 'all') state.dcats = []; else state.dcats = state.dcats.includes(c) ? state.dcats.filter(x => x !== c) : [...state.dcats, c].sort((a, b) => CATS.indexOf(a) - CATS.indexOf(b)); saveListPrefs(); renderReport(); }
   else if (act === 'rule') { state.rule = state.rule === el.dataset.id ? '' : el.dataset.id; if (state.rule && state.wsf === 'clean') state.wsf = 'all'; renderSummary(state.result); }
   else if (act === 'decl-find') applyDecl($('#p-decl').value);
   else if (act === 'decl-clear') applyDecl('');
