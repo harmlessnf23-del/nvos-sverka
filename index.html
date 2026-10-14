@@ -657,6 +657,13 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .ftbl tr.warning td.sev::before{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:8px;height:7px;background:var(--warn-fill)}
 .cnt-w::before,.pill.warnp::before{content:"";display:inline-block;width:7px;height:6px;margin-right:4px;vertical-align:1px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)}
 .prob .bar i.w{background:var(--warn-fill)}
+/* v54: принятые из файла, выгрузка списка */
+.acc-bar{gap:8px 12px}
+.acc-hint{font-size:13px;line-height:1.45}
+/* v53: принятие декларации */
+.decl-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.decl-acts .btn.primary svg{color:#fff}
+.acc-pill{font-size:13px;padding:5px 10px}
 /* v52: фильтр по категориям в списке деклараций */
 .dcatbar{gap:8px 12px}
 .segm.dcats button{min-width:44px;justify-content:center}
@@ -1705,12 +1712,37 @@ function applyRail() {
   const t = $('#rail-toggle'); if (t) { t.setAttribute('aria-expanded', String(!c)); const l = c ? 'Развернуть меню' : 'Свернуть меню'; t.setAttribute('aria-label', l); t.title = l; }
 }
 try { const v = JSON.parse(localStorage.getItem('sverka-list') || '{}'); if (v.dsort in DSORT_KEYS) state.dsort = v.dsort; state.hideAcc = !!v.hideAcc; if (Array.isArray(v.dcats)) state.dcats = v.dcats.filter(c => ['I', 'II', 'III', 'IV', '—'].includes(c)); } catch (e) {}
+/* «Принять декларацию»: отметка хранится в этом браузере (localStorage 'sverka-accepted'), ключ — отчётный год + номер декларации */
+let ACCEPTED = {};
+try { ACCEPTED = JSON.parse(localStorage.getItem('sverka-accepted') || '{}') || {}; } catch (e) { ACCEPTED = {}; }
+const accYear = () => state.result ? state.result.settings.year : SETTINGS.year;
+const accKey = no => accYear() + '|' + no;
+const accOf = no => ACCEPTED[accKey(no)] || null;
+const accList = () => Object.values(ACCEPTED).filter(a => a.year === accYear()).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+function saveAccepted() { try { localStorage.setItem('sverka-accepted', JSON.stringify(ACCEPTED)); } catch (e) { toast('Не удалось сохранить отметку в браузере'); } }
+function acceptDecl(no) {
+  const d = state.result?.decls.find(x => x.no === no); if (!d) return;
+  ACCEPTED[accKey(no)] = { no, year: accYear(), at: new Date().toISOString(), orgs: d.orgs, inns: d.inns, errors: d.errors, warnings: d.warnings };
+  saveAccepted(); toast(`Декларация № ${no} принята — она в разделе «Принятые»`);
+}
+/* принятая = отмечена в сервисе ИЛИ в загруженном ДПНВОС статус «Принято» (после обновления общего файла) */
+const isAccFile = d => isAccepted(d);
+const isAcc = d => !!accOf(d.no) || isAccFile(d);
+function accRows(R) {
+  const rows = new Map();
+  for (const a of accList()) rows.set(a.no, { no: a.no, src: 'service', at: a.at, a, d: R?.decls.find(x => x.no === a.no) });
+  if (R) for (const d of R.decls) if (isAccFile(d) && !rows.has(d.no)) rows.set(d.no, { no: d.no, src: 'file', at: '', d });
+  return [...rows.values()];
+}
+function unacceptDecl(no) { delete ACCEPTED[accKey(no)]; saveAccepted(); toast(`Декларация № ${no} возвращена в работу`); }
+const fmtDT = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); };
 function saveListPrefs() { try { localStorage.setItem('sverka-list', JSON.stringify({ dsort: state.dsort, hideAcc: state.hideAcc, dcats: state.dcats })); } catch (e) {} }
 try { const v = localStorage.getItem('sverka-rail'); state.railCollapsed = v == null ? innerWidth < 1200 : v === '1'; } catch (e) { state.railCollapsed = innerWidth < 1200; }
 /* боковое меню */
 const NAV_ICON = {
   summary: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>',
   decls: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+  accepted: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 14l2 2 4-4"/></svg>',
   nodecl: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>',
   docs: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
 };
@@ -1718,10 +1750,11 @@ function slotState(d) { const s = slotOf(d); if (!s) return ''; if (s.error) ret
 function renderNav() {
   const el = $('#nav'); if (!el) return;
   const R = state.result, noDecl = R ? R.objects.filter(o => !o.decls.length).length : null;
-  const cur = id => (state.page === id || (id === 'decls' && state.page === 'decl')) ? 'aria-current="page"' : '';
+  const cur = id => (state.page === id || (id === 'decls' && state.page === 'decl' && state.prevPage !== 'accepted') || (id === 'accepted' && state.page === 'decl' && state.prevPage === 'accepted')) ? 'aria-current="page"' : '';
   const item = (id, label, extra, dis) => `<li><button type="button" data-act="nav" data-id="${id}" ${cur(id)} ${dis ? 'disabled title="Сначала запустите проверку"' : `title="${label}"`}>${NAV_ICON[id]}<span class="nl">${label}</span>${extra || ''}</button></li>`;
   const dots = `<span class="dots" aria-label="Загружено файлов: ${DOCS.filter(d => slotState(d) === 'ok').length} из ${DOCS.length}">${DOCS.map(d => `<i class="${slotState(d)}"></i>`).join('')}</span>`;
   el.innerHTML = item('summary', 'Сводка', '', !R) + item('decls', 'Декларации', R ? `<span class="cnt">${R.decls.length.toLocaleString('ru-RU')}</span>` : '', !R)
+    + item('accepted', 'Принятые', R ? `<span class="cnt">${accRows(R).length.toLocaleString('ru-RU')}</span>` : '', !R)
     + item('nodecl', 'Без декларации', R ? `<span class="cnt">${noDecl.toLocaleString('ru-RU')}</span>` : '', !R) + item('docs', 'Документы', dots);
 }
 const SEARCH_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
@@ -1732,9 +1765,10 @@ function renderTopbar() {
     summary: [`Сводка за ${Y} год`, R ? `${R.decls.length.toLocaleString('ru-RU')} деклараций · ${R.objects.length.toLocaleString('ru-RU')} объектов` : ''],
     decls: ['Декларации', R ? `Отчётный год ${Y} · нажмите на декларацию, чтобы открыть её` : ''],
     decl: ['Декларация', `Отчётный год ${Y}`],
-    nodecl: ['Без декларации', `Объекты, ИНН которых нет ни в одной декларации за ${Y}`] };
+    nodecl: ['Без декларации', `Объекты, ИНН которых нет ни в одной декларации за ${Y}`],
+    accepted: ['Принятые декларации', `Отчётный год ${Y} · принятые в сервисе (хранятся в этом браузере) и со статусом «Принято» в файле ДПНВОС`] };
   const [t, sub] = titles[p] || titles.docs;
-  const crumb = { docs: 'Документы', summary: 'Сводка', decls: 'Декларации', decl: 'Декларации', nodecl: 'Без декларации' }[p] || '';
+  const crumb = { docs: 'Документы', summary: 'Сводка', decls: 'Декларации', decl: 'Декларации', nodecl: 'Без декларации', accepted: 'Принятые' }[p] || '';
   const mp = $('#mh-page'); if (mp) mp.textContent = crumb;
   const showSearch = R && p !== 'docs';
   $('#topbar').innerHTML = `<div class="tt">${p === 'decl' ? '<button class="btn ghost small" data-act="back" style="margin-left:-10px">← Назад</button>' : ''}<h1>${esc(t)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
@@ -1882,6 +1916,7 @@ function renderReport() {
   if (state.page === 'docs') { box.innerHTML = ''; return; }
   if (state.page === 'summary') return renderSummary(R);
   if (state.page === 'decls') { const keep = SETTINGS.decl; return renderDeclList(R, ''); }
+  if (state.page === 'accepted') return renderAccepted(R);
   const V = currentView();
   if (!V) { state.page = 'decls'; renderTopbar(); return renderDeclList(R, ''); }
   renderDeclCard(box, R, V, '');
@@ -1923,7 +1958,9 @@ function renderDeclCard(box, R, V, stale) {
       <div class="decl-h"><div><div class="crumb">${D ? 'Декларация о плате за НВОС' : 'Объекты природопользователей без декларации'}</div>
         <h2>${D ? '№ ' + esc(D.no) : 'Без декларации'}</h2>
         <div class="note">${D ? `${esc(D.orgs.join('; ') || 'организация не указана')} · ${innBtns(D.inns)} · отчётный период ${esc(D.years.join(', ') || '—')} · ${esc(D.statuses.join(', ') || 'статус не указан')} · объектов в декларации: ${D.declared}, всего в сверке: ${objs.length}` : `Действующие объекты реестра, ДВОС и ПЭК, ИНН которых нет ни в одной декларации за ${R.settings.year} — ${objs.length}`}</div></div>
-        <button class="btn" data-act="export" data-scope="decl">${DL_ICON}${D ? 'Отчёт по декларации' : 'Отчёт .xlsx'}</button></div>
+        <div class="decl-acts">${D ? (isAccFile(D) && !accOf(D.no) ? `<span class="pill ok acc-pill" title="В загруженном ДПНВОС у декларации статус «Принято»">✓ Принята (статус в файле ДПНВОС)</span>` : accOf(D.no) ? `<span class="pill ok acc-pill" title="Принята в сервисе">✓ Принята ${esc(fmtDT(accOf(D.no).at))}</span><button class="btn small" data-act="unaccept" data-id="${esc(D.no)}">Вернуть в работу</button>`
+          : `<button class="btn primary" data-act="accept" data-id="${esc(D.no)}">${ICON.check}Принять декларацию</button>`) : ''}
+        <button class="btn" data-act="export" data-scope="decl">${DL_ICON}${D ? 'Отчёт по декларации' : 'Отчёт .xlsx'}</button></div></div>
       <div class="catgrid">
         <button class="catbox ${state.cat === 'all' ? 'on' : ''}" data-act="vcat" data-id="all"><b>Все</b><span>${objs.length} объектов</span><em><i class="e">${objs.reduce((a, o) => a + o.errors, 0)} ош.</i> · <i class="w">${objs.reduce((a, o) => a + o.warnings, 0)} пред.</i></em></button>
         ${CATS.filter(c => cats[c]).map(c => `<button class="catbox ${state.cat === c ? 'on' : ''}" data-act="vcat" data-id="${c}"><b>${c === '—' ? 'Без категории' : c + ' категория'}</b><span>${cats[c].n} объектов</span><em><i class="e">${cats[c].e} ош.</i> · <i class="w">${cats[c].w} пред.</i></em></button>`).join('')}
@@ -2007,7 +2044,7 @@ function hideAccToggle(R) {
 }
 function wsFiltered(R) {
   const q = state.listQ.trim().toLowerCase(), RS = ruleStats(R);
-  return R.decls.filter(d => (!state.hideAcc || !isAccepted(d)) && (state.wsf === 'all' || (state.wsf === 'err' ? d.errors || d.warnings : !d.errors && !d.warnings))
+  return R.decls.filter(d => !isAcc(d) && (state.wsf === 'all' || (state.wsf === 'err' ? d.errors || d.warnings : !d.errors && !d.warnings))
     && (!state.rule || RS.declRules.get(d.no)?.has(state.rule))
     && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => b.errors - a.errors || b.warnings - a.warnings || (num(a.no) || 0) - (num(b.no) || 0));
@@ -2057,7 +2094,6 @@ function renderSummary(R) {
     <section class="card ws" aria-label="Рабочее место">
       <div class="ws-list">
         <div class="ws-head"><h2>Декларации <span class="note" id="ws-count">${ws.length.toLocaleString('ru-RU')}</span></h2>
-          ${hideAccToggle(R)}
           <div class="segm" role="group" aria-label="Фильтр">${[['all', 'Все'], ['err', 'С замечаниями'], ['clean', 'Чистые']].map(([id, t]) => `<button type="button" data-act="wsf" data-id="${id}" aria-pressed="${state.wsf === id}">${t}</button>`).join('')}</div>
           ${state.rule ? `<span class="rulechip" title="${esc(probLabel(R, state.rule))}"><span class="rc-t">${esc(probLabel(R, state.rule))}</span><button type="button" data-act="rule" data-id="${esc(state.rule)}" aria-label="Снять фильтр по проблеме">✕</button></span>` : ''}
         </div>
@@ -2072,12 +2108,46 @@ function renderSummary(R) {
   else $('#ws-detail').innerHTML = '<div class="empty-card"><b>Нет деклараций под фильтр</b>Измените фильтр слева.</div>';
   updateExportBtn();
 }
+function renderAccepted(R) {
+  const q = state.listQ.trim().toLowerCase();
+  const all = accRows(R), nSvc = all.filter(x => x.src === 'service').length, nFile = all.length - nSvc;
+  const list = all.filter(x => { const d = x.d, a = x.a || {}; return !q || [x.no, (d ? d.inns : a.inns || []).join(' '), (d ? d.orgs : a.orgs || []).join(' ')].join(' ').toLowerCase().includes(q); })
+    .sort((a, b) => (a.src === b.src ? 0 : a.src === 'service' ? -1 : 1) || (b.at || '').localeCompare(a.at || '') || (num(a.no) || 0) - (num(b.no) || 0));
+  $('#report').innerHTML = `<div class="report">
+    <div class="filters acc-bar"><span class="note">Принято в сервисе: <b>${nSvc.toLocaleString('ru-RU')}</b> · статус «Принято» в файле ДПНВОС: <b>${nFile.toLocaleString('ru-RU')}</b></span><span class="dfl-sp"></span>
+      ${nSvc ? `<button type="button" class="btn primary small" data-act="acc-export">${DL_ICON}Скачать список принятых (.xlsx)</button>` : ''}</div>
+    ${nSvc ? `<div class="stale acc-hint">Чтобы принятые в сервисе декларации и после следующей загрузки отображались как принятые, поменяйте им статус на «Принято» в общем файле ДПНВОС (или в системе-источнике) — список для этого в кнопке «Скачать список принятых». После загрузки обновлённого файла они попадут сюда автоматически.</div>` : ''}
+    ${list.length ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Принята</th><th>Замечания сейчас</th><th><span class="sr">Действия</span></th></tr></thead><tbody>
+      ${list.map(x => { const d = x.d, a = x.a || {}, e = d ? d.errors : a.errors, w = d ? d.warnings : a.warnings;
+        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${esc(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
+        <td>${esc((d ? d.orgs : a.orgs || []).join('; ') || '—')}<br>${innBtns(d ? d.inns : a.inns || [])}</td>
+        <td class="num">${x.src === 'service' ? `<span class="pill ok">в сервисе</span><small class="note blk">${esc(fmtDT(x.at))}</small>${d && (d.errors !== a.errors || d.warnings !== a.warnings) ? `<small class="note blk">при принятии: ${a.errors} ош., ${a.warnings} пред.</small>` : ''}` : '<span class="pill skip">статус в файле</span>'}</td>
+        <td class="num">${e || w ? `${e ? `<span class="cnt-e" title="Ошибок">${e}</span> ` : ''}${w ? `<span class="cnt-w" title="Предупреждений">${w}</span>` : ''}` : '<span class="cnt-ok">✓</span>'}</td>
+        <td class="act">${d ? '<span class="rowbtn">Открыть</span> ' : ''}${x.src === 'service' ? `<button type="button" class="btn ghost small" data-act="unaccept" data-id="${esc(x.no)}">Вернуть в работу</button>` : ''}</td></tr>`; }).join('')}
+    </tbody></table></div>` : `<div class="card empty-card"><b>Принятых деклараций за ${accYear()} год пока нет</b>Откройте декларацию и нажмите «Принять декларацию» — она появится здесь и уйдёт из общего списка. Декларации со статусом «Принято» в файле ДПНВОС попадают сюда автоматически.</div>`}
+  </div>`;
+  updateExportBtn();
+}
+/* список принятых в сервисе — для обновления статуса в общем файле ДПНВОС */
+async function exportAccepted() {
+  const R = state.result; if (!R || (!downloads && inClaude)) return;
+  const rows = accRows(R).filter(x => x.src === 'service');
+  const aoa = [['Номер отчёта', 'ИНН', 'Наименование организации', 'Отчётный период', 'Статус отчёта (было)', 'Статус отчёта (новый)', 'Принята в сервисе', 'Ошибок при принятии', 'Предупреждений при принятии'],
+    ...rows.map(x => { const d = x.d, a = x.a; return [/^\d{1,15}$/.test(x.no) ? Number(x.no) : x.no, (d ? d.inns : a.inns || []).join(', '), (d ? d.orgs : a.orgs || []).join('; '), a.year, d ? d.statuses.join(', ') : '', 'Принято', fmtDT(a.at), a.errors, a.warnings]; })];
+  const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [14, 14, 44, 10, 22, 16, 18, 12, 14].map(w => ({ wch: w })); if (aoa.length > 1) ws['!autofilter'] = { ref: `A1:I${aoa.length}` };
+  XLSX.utils.book_append_sheet(wb, ws, 'Принятые');
+  const blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const t = new Date(), p = n => String(n).padStart(2, '0');
+  await saveBlob(`Prinyatye_deklaracii_${accYear()}_${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}.xlsx`, blob, 'Принятые_декларации', 'Список принятых');
+}
 function renderDeclList(R, stale) {
   const q = state.listQ.trim().toLowerCase();
   /* фильтр по категориям: декларация показывается, если ВСЕ её объекты — из выбранных категорий (II → только декларации с одними объектами II) */
   const catOk = d => { const ks = Object.keys(d.cats); return !state.dcats.length || (ks.length > 0 && ks.every(c => state.dcats.includes(c))); };
   const catPresent = CATS.filter(c => R.decls.some(d => d.cats[c]));
-  const base = R.decls.filter(d => catOk(d) && (!state.hideAcc || !isAccepted(d)) && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)));
+  const nAcc = R.decls.filter(isAcc).length;
+  const base = R.decls.filter(d => !isAcc(d) && catOk(d) && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)));
   const nI = base.filter(hasIssues).length, nC = base.length - nI;
   const list = base.filter(d => state.dfl === 'all' || (state.dfl === 'err' ? hasIssues(d) : !hasIssues(d))).sort((DSORT[state.dsort] || DSORT.issues)[1]);
   const noDecl = R.objects.filter(o => !o.decls.length);
@@ -2104,7 +2174,7 @@ function renderDeclList(R, stale) {
     <div class="filters dfilters">
       <div class="segm" role="group" aria-label="Замечания">${[['all', 'Все', base.length], ['err', 'С замечаниями', nI], ['clean', 'Без замечаний', nC]].map(([id, t, n]) => `<button type="button" data-act="dfl" data-id="${id}" aria-pressed="${state.dfl === id}">${t} <small>${n.toLocaleString('ru-RU')}</small></button>`).join('')}</div>
       <label for="dsort" class="sr">Сортировка</label><select id="dsort" aria-label="Сортировка">${Object.entries(DSORT).map(([k, [t]]) => `<option value="${k}" ${state.dsort === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
-      ${hideAccToggle(R)}
+      ${nAcc ? `<button type="button" class="btn ghost small" data-act="nav" data-id="accepted">Принятые: ${nAcc.toLocaleString('ru-RU')} →</button>` : ''}
       <span class="dfl-sp"></span>
       ${noDecl.length ? `<button class="btn small" data-act="open-decl" data-id="__none__">Объекты без декларации · ${noDecl.length.toLocaleString('ru-RU')}</button>` : ''}</div>
     ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th class="vh">${thl(c[1])}</th>`).join('')}<th></th></tr></thead><tbody>
@@ -2240,7 +2310,7 @@ function applyDecl(v) {
 let downloads = null;
 const inClaude = !!window.claude?.use;
 (async () => { try { downloads = window.claude?.use ? await window.claude.use('downloads') : null; } catch (e) { downloads = null; } updateExportBtn(); })();
-function updateExportBtn() { const ok = downloads || !inClaude; for (const b of document.querySelectorAll('[data-act="export"]')) { b.disabled = !ok; b.title = ok ? '' : 'Скачивание недоступно в этом окне просмотра'; } }
+function updateExportBtn() { const ok = downloads || !inClaude; for (const b of document.querySelectorAll('[data-act="export"], [data-act="acc-export"]')) { b.disabled = !ok; b.title = ok ? '' : 'Скачивание недоступно в этом окне просмотра'; } }
 const vText = v => !v || v.t === 'na' ? '' : v.t === 'miss' ? 'нет' : v.t === 'empty' ? 'пусто' : +Number(v.n).toPrecision(12);
 function buildReportWorkbook(R, V, X = XLSX) {
   const wb = X.utils.book_new();
@@ -2261,8 +2331,8 @@ function buildReportWorkbook(R, V, X = XLSX) {
   else { const A = aggTotals(objs);
     sheet([['Код ЗВ', 'Класс опасности', 'Наименование вещества', ...TCOLS.map(c => c[1]), 'Объектов'], ['Итого', '', '', ...TCOLS.map(c => totText(A.sum[c[0]])), objs.length],
       ...A.list.map(x => [x.code, hazOf(x.z), x.name, ...TCOLS.map(c => totText(x.v[c[0]])), x.objs.size])], [10, 10, 44, ...TCOLS.map(() => 14), 10], 'Общие данные', true); }
-  if (!V) sheet([['Декларация №', 'Организация', 'ИНН', 'Статус', 'Объектов I', 'Объектов II', 'Объектов III', 'Объектов IV', 'Ошибок', 'Предупреждений'],
-    ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), d.statuses.join(', '), ...['I', 'II', 'III', 'IV'].map(c => d.cats[c]?.n || 0), d.errors, d.warnings])], [14, 40, 14, 20, 10, 10, 10, 10, 10, 14], 'Декларации', true);
+  if (!V) sheet([['Декларация №', 'Организация', 'ИНН', 'Статус', 'Объектов I', 'Объектов II', 'Объектов III', 'Объектов IV', 'Ошибок', 'Предупреждений', 'Принята'],
+    ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), d.statuses.join(', '), ...['I', 'II', 'III', 'IV'].map(c => d.cats[c]?.n || 0), d.errors, d.warnings, accOf(d.no) ? 'в сервисе ' + fmtDT(accOf(d.no).at) : isAccFile(d) ? 'статус в файле' : ''])], [14, 40, 14, 20, 10, 10, 10, 10, 10, 14, 18], 'Декларации', true);
   sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование', 'Декларации', 'В реестре', 'Дата исключения', 'Дата актуализации', 'Актуализация', 'ДПНВОС №', 'ДВОС / ПЭК / IV', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', 'ПЭК №', 'ЗВ ДПНВОС', 'ЗВ ОНВОС', 'ЗВ ДВОС', 'ЗВ ПЭК', 'Ошибок', 'Предупреждений', 'Результат'],
     ...objs.map(o => [o.cat, o.code, o.inn, o.name, o.decls.join(', '), o.inReg ? 'да' : 'нет', fmtDate(o.dateOut), fmtDate(o.dateUpd), UPD_TXT[updState(o.dateUpd, R.settings.year)] || '', o.dpNo || 'нет', o.third[1], o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), o.hasPek ? (o.pkNo || 'есть') : 'нет', o.zv.DPNVOS ?? '', o.zv.ONVOS ?? '', o.zv.DVOS ?? '', o.zv.PEK ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
     [8, 19, 13, 40, 14, 9, 14, 14, 20, 12, 18, 12, 14, 14, 12, 9, 9, 9, 9, 9, 12, 20], 'Объекты', true);
@@ -2300,6 +2370,11 @@ function loadStyledXlsx() {
     document.head.appendChild(sc);
   });
   return styledLib;
+}
+async function saveBlob(fname, blob, ruName, what) {
+  if (!downloads) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast(`${what} скачан`); return; }
+  try { await downloads.save({ filename: ruName ? fname.replace(/^[A-Za-z_]+?(?=_\d)/, ruName) : fname, data: blob }); toast(`${what} сохранён`); }
+  catch (e) { if (e?.code === 'declined') return; toast(e?.code === 'rate_limited' ? 'Окно сохранения уже открыто' : 'Не удалось сохранить файл: ' + (e?.message || e?.code || 'ошибка')); }
 }
 async function exportReport(scope) {
   const R = state.result; if (!R || (!downloads && inClaude)) return;
@@ -2465,6 +2540,8 @@ document.addEventListener('click', e => {
   else if (act === 'back') goPage(state.prevPage && state.prevPage !== 'decl' && state.prevPage !== 'nodecl' ? state.prevPage : 'decls');
   else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.imp = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {}; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
   else if (act === 'wsf') { state.wsf = el.dataset.id; renderSummary(state.result); }
+  else if (act === 'accept' || act === 'unaccept') { e.stopPropagation(); act === 'accept' ? acceptDecl(el.dataset.id) : unacceptDecl(el.dataset.id); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); return; }
+  else if (act === 'acc-export') exportAccepted();
   else if (act === 'dfl') { state.dfl = el.dataset.id; renderReport(); }
   else if (act === 'dcat') { const c = el.dataset.id; if (c === 'all') state.dcats = []; else state.dcats = state.dcats.includes(c) ? state.dcats.filter(x => x !== c) : [...state.dcats, c].sort((a, b) => CATS.indexOf(a) - CATS.indexOf(b)); saveListPrefs(); renderReport(); }
   else if (act === 'rule') { state.rule = state.rule === el.dataset.id ? '' : el.dataset.id; if (state.rule && state.wsf === 'clean') state.wsf = 'all'; renderSummary(state.result); }
