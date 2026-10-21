@@ -1782,7 +1782,7 @@ function renderNav() {
   const cur = id => (state.page === id || (id === 'decls' && state.page === 'decl' && state.prevPage !== 'accepted') || (id === 'accepted' && state.page === 'decl' && state.prevPage === 'accepted')) ? 'aria-current="page"' : '';
   const item = (id, label, extra, dis) => `<li><button type="button" data-act="nav" data-id="${id}" ${cur(id)} ${dis ? 'disabled title="Сначала запустите проверку"' : `title="${label}"`}>${NAV_ICON[id]}<span class="nl">${label}</span>${extra || ''}</button></li>`;
   const dots = `<span class="dots" aria-label="Загружено файлов: ${DOCS.filter(d => slotState(d) === 'ok').length} из ${DOCS.length}">${DOCS.map(d => `<i class="${slotState(d)}"></i>`).join('')}</span>`;
-  el.innerHTML = item('summary', 'Сводка', '', !R) + item('decls', 'Декларации', R ? `<span class="cnt">${R.decls.length.toLocaleString('ru-RU')}</span>` : '', !R)
+  el.innerHTML = item('summary', 'Стакан задач', '', !R) + item('decls', 'Декларации', R ? `<span class="cnt">${R.decls.length.toLocaleString('ru-RU')}</span>` : '', !R)
     + item('accepted', 'Принятые', R ? `<span class="cnt">${accRows(R).length.toLocaleString('ru-RU')}</span>` : '', !R)
     + item('nodecl', 'Без декларации', R ? `<span class="cnt">${noDecl.toLocaleString('ru-RU')}</span>` : '', !R) + item('docs', 'Документы', dots);
 }
@@ -1791,13 +1791,13 @@ const DL_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" str
 function renderTopbar() {
   const R = state.result, Y = R ? R.settings.year : SETTINGS.year, p = state.page;
   const titles = { docs: ['Документы', 'Реестр ОНВОС · ДПНВОС: выбросы и сбросы · ДВОС · ПЭК: выбросы и сбросы'],
-    summary: [`Сводка за ${Y} год`, R ? `${R.decls.length.toLocaleString('ru-RU')} деклараций · ${R.objects.length.toLocaleString('ru-RU')} объектов` : ''],
+    summary: [`Стакан задач за ${Y} год`, R ? `${R.decls.length.toLocaleString('ru-RU')} деклараций · ${R.objects.length.toLocaleString('ru-RU')} объектов` : ''],
     decls: ['Декларации', R ? `Отчётный год ${Y} · нажмите на декларацию, чтобы открыть её` : ''],
     decl: ['Декларация', `Отчётный год ${Y}`],
     nodecl: ['Без декларации', `Объекты, ИНН которых нет ни в одной декларации за ${Y}`],
     accepted: ['Принятые декларации', `Отчётный год ${Y} · принятые в сервисе (хранятся в этом браузере) и со статусом «Принято» в файле ДПНВОС`] };
   const [t, sub] = titles[p] || titles.docs;
-  const crumb = { docs: 'Документы', summary: 'Сводка', decls: 'Декларации', decl: 'Декларации', nodecl: 'Без декларации', accepted: 'Принятые' }[p] || '';
+  const crumb = { docs: 'Документы', summary: 'Стакан задач', decls: 'Декларации', decl: 'Декларации', nodecl: 'Без декларации', accepted: 'Принятые' }[p] || '';
   const mp = $('#mh-page'); if (mp) mp.textContent = crumb;
   const showSearch = R && p !== 'docs';
   $('#topbar').innerHTML = `<div class="tt">${p === 'decl' ? '<button class="btn ghost small" data-act="back" style="margin-left:-10px">← Назад</button>' : ''}<h1>${esc(t)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
@@ -2094,6 +2094,7 @@ function renderWsList() {
 function renderSummary(R) {
   const D = R.decls, clean = D.filter(d => !d.errors && !d.warnings).length, withE = D.filter(d => d.errors).length, withW = D.filter(d => d.warnings).length;
   const errs = R.findings.filter(x => x.severity === 'error').length, pct = D.length ? Math.round(clean / D.length * 100) : 0;
+  const nAccS = D.filter(isAcc).length, accPct = D.length ? Math.round(nAccS / D.length * 100) : 0;
   const RS = ruleStats(R), top = RS.list.slice(0, 10), max = Math.max(1, ...top.map(r => r.n));
   if (state.rule && !RS.list.some(r => r.id === state.rule)) state.rule = '';
   const ws = wsFiltered(R);
@@ -2106,7 +2107,8 @@ function renderSummary(R) {
         <div><div class="lbl">Без замечаний</div><div class="big" style="font-size:22px">${clean.toLocaleString('ru-RU')}</div><div class="sub">из ${D.length.toLocaleString('ru-RU')} деклараций</div></div></div>
       <div class="kpi"><div class="lbl"><i style="background:var(--err)"></i>Ошибки</div><div class="big">${errs.toLocaleString('ru-RU')}</div><div class="sub">в ${withE.toLocaleString('ru-RU')} декларациях</div></div>
       <div class="kpi"><div class="lbl"><i class="tri" style="background:var(--warn-fill)"></i>Предупреждения</div><div class="big">${(R.findings.length - errs).toLocaleString('ru-RU')}</div><div class="sub">в ${withW.toLocaleString('ru-RU')} декларациях</div></div>
-      <div class="kpi"><div class="lbl">Документы</div><ul class="kdocs">${docState}</ul><button type="button" class="btn ghost small" data-act="nav" data-id="docs" style="margin:6px 0 0 -10px">Заменить файлы</button></div>
+      <div class="kpi ringk"><div class="ring" style="background:conic-gradient(#346E58 0 ${accPct}%, #E4E8EF ${accPct}% 100%)" aria-hidden="true"><b>${accPct}%</b></div>
+        <div><div class="lbl">Принятые</div><div class="big" style="font-size:22px">${nAccS.toLocaleString('ru-RU')}</div><div class="sub">из ${D.length.toLocaleString('ru-RU')} деклараций</div><button type="button" class="btn ghost small" data-act="nav" data-id="accepted" style="margin:2px 0 0 -10px;white-space:nowrap">Открыть →</button></div></div>
     </section>
     ${top.length ? `<section class="card probs-card" aria-labelledby="probs-h">
       <div class="probs-h"><h2 id="probs-h">Главные проблемы</h2><span class="note">Нажмите на проблему, чтобы оставить в списке только декларации с ней</span></div>
