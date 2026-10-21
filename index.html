@@ -2147,7 +2147,6 @@ function renderAccepted(R) {
   $('#report').innerHTML = `<div class="report">
     <div class="filters acc-bar"><span class="note">Принято в сервисе: <b>${nSvc.toLocaleString('ru-RU')}</b> · статус «Принято» в файле ДПНВОС: <b>${nFile.toLocaleString('ru-RU')}</b></span><span class="dfl-sp"></span>
       ${nSvc ? `<button type="button" class="btn primary small" data-act="acc-export">${DL_ICON}Скачать список принятых (.xlsx)</button>` : ''}</div>
-    ${nSvc ? `<div class="stale acc-hint">Чтобы принятые в сервисе декларации и после следующей загрузки отображались как принятые, поменяйте им статус на «Принято» в общем файле ДПНВОС (или в системе-источнике) — список для этого в кнопке «Скачать список принятых». После загрузки обновлённого файла они попадут сюда автоматически.</div>` : ''}
     ${list.length ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Принята</th><th>Замечания сейчас</th><th><span class="sr">Действия</span></th></tr></thead><tbody>
       ${list.map(x => { const d = x.d, a = x.a || {}, e = d ? d.errors : a.errors, w = d ? d.warnings : a.warnings;
         return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${esc(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
