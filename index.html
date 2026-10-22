@@ -660,6 +660,9 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 /* v54: принятые из файла, выгрузка списка */
 .acc-bar{gap:8px 12px}
 .acc-hint{font-size:13px;line-height:1.45}
+/* v62: свёрнутое меню — рабочая область растягивается по экрану (до 1680px) и центрируется */
+.app.collapsed .main{align-items:center}
+.app.collapsed .main>*{max-width:1680px;margin-left:auto;margin-right:auto}
 /* v61: ИНН объекта с копированием */
 .ftbl td.objc small.obj-inn .cpy{font-size:12px;color:var(--muted)}
 /* v57: больше числовых столбцов — ужимаем */
