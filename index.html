@@ -660,6 +660,8 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 /* v54: принятые из файла, выгрузка списка */
 .acc-bar{gap:8px 12px}
 .acc-hint{font-size:13px;line-height:1.45}
+/* v61: ИНН объекта с копированием */
+.ftbl td.objc small.obj-inn .cpy{font-size:12px;color:var(--muted)}
 /* v57: больше числовых столбцов — ужимаем */
 .ftbl td.v,.ftbl th.vh{padding-left:5px;padding-right:5px}
 .ftbl th.vh{font-size:12.5px}
@@ -2242,7 +2244,7 @@ function renderTable() {
     if (!list.length) { $('#findings').innerHTML = '<div class="empty">Под фильтр ничего не попало.</div>'; return; }
     const shown = list.slice(0, 1500);
     $('#findings').innerHTML = `<table class="ftbl"><thead><tr><th>Объект</th><th>Реестр</th><th>Декларация</th><th>ДВОС / ПЭК / IV</th><th title="Число веществ: ДПНВОС / ОНВОС / ДВОС / ПЭК">ЗВ: ДП/ОН/ДВ/ПЭК</th><th>Итог</th></tr></thead><tbody>
-      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}" tabindex="0" title="Открыть вещества объекта"><td class="objc"><span class="obj-l">${catCell(o.cat)}<span class="obj-c">${codeBtn(o.code)}</span></span><small>${esc(o.name)}</small><small class="mono">ИНН ${esc(o.inn)}</small>${srcLine(o)}</td>
+      ${shown.map(o => `<tr class="rowlink" data-act="obj" data-id="${esc(o.key)}" tabindex="0" title="Открыть вещества объекта"><td class="objc"><span class="obj-l">${catCell(o.cat)}<span class="obj-c">${codeBtn(o.code)}</span></span><small>${esc(o.name)}</small><small class="obj-inn">${o.inn ? innBtns([o.inn]) : 'ИНН не указан'}</small>${srcLine(o)}</td>
         <td>${o.inReg ? (o.dateOut ? `исключён ${fmtDate(o.dateOut)}` : 'есть') + updCell(o.dateUpd, Y) : '<span class="pill fail">нет</span>'}</td>
         <td class="num">${o.dpNo ? esc(o.dpNo) : '<span class="pill fail">нет</span>'}</td>
         <td><span class="pill ${o.third[0]}">${esc(o.third[1])}</span>${o.dvNo ? `<small class="note blk">№ ${esc(o.dvNo)} · ${fmtDate(o.dvDate)}${o.dvUntil ? ' – ' + fmtDate(o.dvUntil) : ''}</small>` : ''}${o.cat === 'III' && o.pkNo ? `<small class="note blk">№ ${esc(o.pkNo)}</small>` : ''}</td>
