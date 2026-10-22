@@ -2111,7 +2111,7 @@ function renderSummary(R) {
         <div><div class="lbl">Принятые</div><div class="big" style="font-size:22px">${nAccS.toLocaleString('ru-RU')}</div><div class="sub">из ${D.length.toLocaleString('ru-RU')} деклараций</div><button type="button" class="btn ghost small" data-act="nav" data-id="accepted" style="margin:2px 0 0 -10px;white-space:nowrap">Открыть →</button></div></div>
     </section>
     ${top.length ? `<section class="card probs-card" aria-labelledby="probs-h">
-      <div class="probs-h"><h2 id="probs-h">Главные проблемы</h2><span class="note">Нажмите на проблему, чтобы оставить в списке только декларации с ней</span></div>
+      <div class="probs-h"><h2 id="probs-h">Главные проблемы</h2></div>
       <div class="probs">${top.map(r => { const w = Math.max(3, Math.round(r.n / max * 100)), sev = r.e ? (r.w ? 'mix' : 'e') : 'w';
         const cats = ['I', 'II', 'III', 'IV', '—'].filter(c => r.cats.has(c));
         return `<button type="button" class="prob ${state.rule === r.id ? 'on' : ''}" data-act="rule" data-id="${esc(r.id)}" aria-pressed="${state.rule === r.id}" title="${esc(`${r.label}. Проверка: ${CHECKS[r.check] || ''}. Правила: ${[...r.ids].sort().join(', ')}`)}">
