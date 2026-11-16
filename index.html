@@ -728,6 +728,14 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
   .main{padding:16px 16px 48px}
   .app.collapsed .rail{display:none}
 }
+/* модальное окно «Отклонить декларацию» */
+.modal{position:fixed;inset:0;z-index:50;background:rgba(11,31,51,.45);display:grid;place-items:center;padding:16px}
+.modal[hidden]{display:none}
+.modal-card{background:var(--surface);border-radius:12px;box-shadow:0 24px 64px rgba(11,31,51,.25);width:min(520px,100%);padding:22px;display:flex;flex-direction:column;gap:14px}
+.modal-card h3{margin:0;font-size:18px;font-weight:600}
+.modal-card textarea{width:100%;border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;font:inherit;resize:vertical;min-height:84px}
+.modal-card textarea:focus{outline:2px solid var(--accent);outline-offset:0}
+.modal-acts{display:flex;justify-content:flex-end;gap:8px}
 </style>
 
 </head>
@@ -766,6 +774,18 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 </main>
 </div>
 <div id="declbar" hidden></div>
+<div class="modal" id="rej-modal" hidden role="dialog" aria-modal="true" aria-labelledby="rej-modal-title">
+  <div class="modal-card">
+    <h3 id="rej-modal-title">Отклонить декларацию № <span id="rej-no"></span></h3>
+    <p class="note" style="margin:0">Укажите причину отклонения — она сохранится в этом браузере и попадёт в раздел «Отклонённые» и в выгрузку.</p>
+    <label class="sr" for="rej-reason">Причина отклонения</label>
+    <textarea id="rej-reason" rows="3" placeholder="Например: неверно указана масса вещества, нет объекта в реестре…"></textarea>
+    <div class="modal-acts">
+      <button type="button" class="btn" data-act="rej-cancel">Отмена</button>
+      <button type="button" class="btn primary" data-act="rej-ok">Отклонить</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script>
@@ -1760,12 +1780,30 @@ function acceptDecl(no) {
   saveAccepted(); toast(`Декларация № ${no} принята — она в разделе «Принятые»`);
 }
 /* принятая = отмечена в сервисе ИЛИ в загруженном ДПНВОС статус «Принято» (после обновления общего файла) */
+/* «Отклонить декларацию»: причина хранится в браузере (localStorage 'sverka-rejected'), ключ — отчётный год + номер декларации */
+let REJECTED = {};
+try { REJECTED = JSON.parse(localStorage.getItem('sverka-rejected') || '{}') || {}; } catch (e) { REJECTED = {}; }
+const rejKey = no => accYear() + '|' + no;
+const rejOf = no => REJECTED[rejKey(no)] || null;
+const rejList = () => Object.values(REJECTED).filter(r => r.year === accYear()).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+function saveRejected() { try { localStorage.setItem('sverka-rejected', JSON.stringify(REJECTED)); } catch (e) { toast('Не удалось сохранить причину в браузере'); } }
+function rejectDecl(no, reason) {
+  const d = state.result?.decls.find(x => x.no === no);
+  REJECTED[rejKey(no)] = { no, year: accYear(), at: new Date().toISOString(), reason: String(reason || '').trim(), orgs: d?.orgs || [], inns: d?.inns || [], errors: d?.errors || 0, warnings: d?.warnings || 0 };
+  delete ACCEPTED[accKey(no)]; saveRejected(); saveAccepted();
+}
+function unrejectDecl(no) { delete REJECTED[rejKey(no)]; saveRejected(); }
+let rejTarget = null;
+function openRejectModal(no) { rejTarget = no; $('#rej-no').textContent = no; $('#rej-reason').value = ''; $('#rej-modal').hidden = false; const ta = $('#rej-reason'); if (ta) ta.focus(); }
+function closeRejectModal() { $('#rej-modal').hidden = true; rejTarget = null; }
 const isAccFile = d => isAccepted(d);
-const isAcc = d => !!accOf(d.no) || isAccFile(d);
+const isRej = d => !!rejOf(d.no);
+const isAcc = d => !isRej(d) && (!!accOf(d.no) || isAccFile(d));
+const isDone = d => isAcc(d) || isRej(d);
 function accRows(R) {
   const rows = new Map();
-  for (const a of accList()) rows.set(a.no, { no: a.no, src: 'service', at: a.at, a, d: R?.decls.find(x => x.no === a.no) });
-  if (R) for (const d of R.decls) if (isAccFile(d) && !rows.has(d.no)) rows.set(d.no, { no: d.no, src: 'file', at: '', d });
+  for (const a of accList()) if (!rejOf(a.no)) rows.set(a.no, { no: a.no, src: 'service', at: a.at, a, d: R?.decls.find(x => x.no === a.no) });
+  if (R) for (const d of R.decls) if (isAccFile(d) && !rejOf(d.no) && !rows.has(d.no)) rows.set(d.no, { no: d.no, src: 'file', at: '', d });
   return [...rows.values()];
 }
 function unacceptDecl(no) { delete ACCEPTED[accKey(no)]; saveAccepted(); toast(`Декларация № ${no} возвращена в работу`); }
@@ -1777,6 +1815,7 @@ const NAV_ICON = {
   summary: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>',
   decls: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
   accepted: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 14l2 2 4-4"/></svg>',
+  rejected: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 15.5l7-7"/></svg>',
   nodecl: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>',
   docs: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
 };
@@ -1784,11 +1823,12 @@ function slotState(d) { const s = slotOf(d); if (!s) return ''; if (s.error) ret
 function renderNav() {
   const el = $('#nav'); if (!el) return;
   const R = state.result, noDecl = R ? R.objects.filter(o => !o.decls.length).length : null;
-  const cur = id => (state.page === id || (id === 'decls' && state.page === 'decl' && state.prevPage !== 'accepted') || (id === 'accepted' && state.page === 'decl' && state.prevPage === 'accepted')) ? 'aria-current="page"' : '';
+  const cur = id => (state.page === id || (id === 'decls' && state.page === 'decl' && state.prevPage !== 'accepted' && state.prevPage !== 'rejected') || (id === 'accepted' && state.page === 'decl' && state.prevPage === 'accepted') || (id === 'rejected' && state.page === 'decl' && state.prevPage === 'rejected')) ? 'aria-current="page"' : '';
   const item = (id, label, extra, dis) => `<li><button type="button" data-act="nav" data-id="${id}" ${cur(id)} ${dis ? 'disabled title="Сначала запустите проверку"' : `title="${label}"`}>${NAV_ICON[id]}<span class="nl">${label}</span>${extra || ''}</button></li>`;
   const dots = `<span class="dots" aria-label="Загружено файлов: ${DOCS.filter(d => slotState(d) === 'ok').length} из ${DOCS.length}">${DOCS.map(d => `<i class="${slotState(d)}"></i>`).join('')}</span>`;
   el.innerHTML = item('summary', 'Стакан задач', '', !R) + item('decls', 'Декларации', R ? `<span class="cnt">${R.decls.length.toLocaleString('ru-RU')}</span>` : '', !R)
     + item('accepted', 'Принятые', R ? `<span class="cnt">${accRows(R).length.toLocaleString('ru-RU')}</span>` : '', !R)
+    + item('rejected', 'Отклонённые', R ? `<span class="cnt">${rejList().length.toLocaleString('ru-RU')}</span>` : '', !R)
     + item('nodecl', 'Без декларации', R ? `<span class="cnt">${noDecl.toLocaleString('ru-RU')}</span>` : '', !R) + item('docs', 'Документы', dots);
 }
 const SEARCH_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
@@ -1800,9 +1840,10 @@ function renderTopbar() {
     decls: ['Декларации', R ? `Отчётный год ${Y} · нажмите на декларацию, чтобы открыть её` : ''],
     decl: ['Декларация', `Отчётный год ${Y}`],
     nodecl: ['Без декларации', `Объекты, ИНН которых нет ни в одной декларации за ${Y}`],
-    accepted: ['Принятые декларации', `Отчётный год ${Y} · принятые в сервисе (хранятся в этом браузере) и со статусом «Принято» в файле ДПНВОС`] };
+    accepted: ['Принятые декларации', `Отчётный год ${Y} · принятые в сервисе (хранятся в этом браузере) и со статусом «Принято» в файле ДПНВОС`],
+    rejected: ['Отклонённые декларации', `Отчётный год ${Y} · отклонены в сервисе с указанием причины`] };
   const [t, sub] = titles[p] || titles.docs;
-  const crumb = { docs: 'Документы', summary: 'Стакан задач', decls: 'Декларации', decl: 'Декларации', nodecl: 'Без декларации', accepted: 'Принятые' }[p] || '';
+  const crumb = { docs: 'Документы', summary: 'Стакан задач', decls: 'Декларации', decl: 'Декларации', nodecl: 'Без декларации', accepted: 'Принятые', rejected: 'Отклонённые' }[p] || '';
   const mp = $('#mh-page'); if (mp) mp.textContent = crumb;
   const showSearch = R && p !== 'docs';
   $('#topbar').innerHTML = `<div class="tt">${p === 'decl' ? '<button class="btn ghost small" data-act="back" style="margin-left:-10px">← Назад</button>' : ''}<h1>${esc(t)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
@@ -1951,6 +1992,7 @@ function renderReport() {
   if (state.page === 'summary') return renderSummary(R);
   if (state.page === 'decls') { const keep = SETTINGS.decl; return renderDeclList(R, ''); }
   if (state.page === 'accepted') return renderAccepted(R);
+  if (state.page === 'rejected') return renderRejected(R);
   const V = currentView();
   if (!V) { state.page = 'decls'; renderTopbar(); return renderDeclList(R, ''); }
   renderDeclCard(box, R, V, '');
@@ -1984,7 +2026,7 @@ function renderDeclCard(box, R, V, stale) {
   const inCat = o => state.cat === 'all' || o.cat === state.cat;
   const fnd = R.findings.filter(x => V.keys.has(x.objKey) && inCat(x));
   const lines = R.lines.filter(l => V.keys.has(l.objKey) && inCat(l));
-  const errs = fnd.filter(x => x.severity === 'error').length, D = V.decl;
+  const errs = fnd.filter(x => x.severity === 'error').length, D = V.decl, rej = D ? rejOf(D.no) : null;
   const impHtml = impBar(lines);
   box.innerHTML = `<div class="report">
     ${stale}
@@ -1992,8 +2034,9 @@ function renderDeclCard(box, R, V, stale) {
       <div class="decl-h"><div><div class="crumb">${D ? 'Декларация о плате за НВОС' : 'Объекты природопользователей без декларации'}</div>
         <h2>${D ? '№ ' + esc(D.no) : 'Без декларации'}</h2>
         <div class="note">${D ? `${esc(D.orgs.join('; ') || 'организация не указана')} · ${innBtns(D.inns)} · отчётный период ${esc(D.years.join(', ') || '—')} · ${esc(D.statuses.join(', ') || 'статус не указан')} · объектов в декларации: ${D.declared}, всего в сверке: ${objs.length}` : `Действующие объекты реестра, ДВОС и ПЭК, ИНН которых нет ни в одной декларации за ${R.settings.year} — ${objs.length}`}</div></div>
-        <div class="decl-acts">${D ? (isAccFile(D) && !accOf(D.no) ? `<span class="pill ok acc-pill" title="В загруженном ДПНВОС у декларации статус «Принято»">✓ Принята (статус в файле ДПНВОС)</span>` : accOf(D.no) ? `<span class="pill ok acc-pill" title="Принята в сервисе">✓ Принята ${esc(fmtDT(accOf(D.no).at))}</span><button class="btn small" data-act="unaccept" data-id="${esc(D.no)}">Вернуть в работу</button>`
-          : `<button class="btn primary" data-act="accept" data-id="${esc(D.no)}">${ICON.check}Принять декларацию</button>`) : ''}
+        <div class="decl-acts">${D ? (rej ? `<span class="pill fail acc-pill" title="Отклонена в сервисе">✕ Отклонена ${esc(fmtDT(rej.at))}</span><button class="btn small" data-act="unreject" data-id="${esc(D.no)}">Вернуть в работу</button><span class="note blk" style="flex-basis:100%">Причина: ${esc(rej.reason) || 'не указана'}</span>`
+          : (isAccFile(D) && !accOf(D.no) ? `<span class="pill ok acc-pill" title="В загруженном ДПНВОС у декларации статус «Принято»">✓ Принята (статус в файле ДПНВОС)</span>` : accOf(D.no) ? `<span class="pill ok acc-pill" title="Принята в сервисе">✓ Принята ${esc(fmtDT(accOf(D.no).at))}</span><button class="btn small" data-act="unaccept" data-id="${esc(D.no)}">Вернуть в работу</button>`
+            : `<button class="btn primary" data-act="accept" data-id="${esc(D.no)}">${ICON.check}Принять декларацию</button>`) + `<button class="btn" data-act="reject" data-id="${esc(D.no)}">Отклонить</button>`) : ''}
         <button class="btn" data-act="export" data-scope="decl">${DL_ICON}${D ? 'Отчёт по декларации' : 'Отчёт .xlsx'}</button></div></div>
       <div class="catgrid">
         <button class="catbox ${state.cat === 'all' ? 'on' : ''}" data-act="vcat" data-id="all"><b>Все</b><span>${objs.length} объектов</span><em><i class="e">${objs.reduce((a, o) => a + o.errors, 0)} ош.</i> · <i class="w">${objs.reduce((a, o) => a + o.warnings, 0)} пред.</i></em></button>
@@ -2078,7 +2121,7 @@ function hideAccToggle(R) {
 }
 function wsFiltered(R) {
   const q = state.listQ.trim().toLowerCase(), RS = ruleStats(R);
-  return R.decls.filter(d => !isAcc(d) && (state.wsf === 'all' || (state.wsf === 'err' ? d.errors || d.warnings : !d.errors && !d.warnings))
+  return R.decls.filter(d => !isDone(d) && (state.wsf === 'all' || (state.wsf === 'err' ? d.errors || d.warnings : !d.errors && !d.warnings))
     && (!state.rule || RS.declRules.get(d.no)?.has(state.rule))
     && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => b.errors - a.errors || b.warnings - a.warnings || (num(a.no) || 0) - (num(b.no) || 0));
@@ -2163,6 +2206,40 @@ function renderAccepted(R) {
   </div>`;
   updateExportBtn();
 }
+/* список отклонённых в сервисе — для раздела «Отклонённые» */
+function renderRejected(R) {
+  const q = state.listQ.trim().toLowerCase();
+  const all = rejList().map(r => ({ ...r, d: R.decls.find(x => x.no === r.no) }));
+  const list = all.filter(x => !q || [x.no, (x.d ? x.d.inns : x.inns || []).join(' '), (x.d ? x.d.orgs : x.orgs || []).join(' ')].join(' ').toLowerCase().includes(q))
+    .sort((a, b) => (b.at || '').localeCompare(a.at || '') || (num(a.no) || 0) - (num(b.no) || 0));
+  $('#report').innerHTML = `<div class="report">
+    <div class="filters acc-bar"><span class="note">Отклонено в сервисе: <b>${all.length.toLocaleString('ru-RU')}</b> · причина хранится в этом браузере</span><span class="dfl-sp"></span>
+      ${all.length ? `<button type="button" class="btn primary small" data-act="rej-export">${DL_ICON}Скачать список отклонённых (.xlsx)</button>` : ''}</div>
+    ${list.length ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Причина отклонения</th><th>Отклонена</th><th>Замечания сейчас</th><th><span class="sr">Действия</span></th></tr></thead><tbody>
+      ${list.map(x => { const d = x.d, e = d ? d.errors : x.errors, w = d ? d.warnings : x.warnings;
+        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${esc(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
+        <td>${esc((d ? d.orgs : x.orgs || []).join('; ') || '—')}<br>${innBtns(d ? d.inns : x.inns || [])}</td>
+        <td class="note">${esc(x.reason) || '<span class="note">без причины</span>'}</td>
+        <td class="num">${esc(fmtDT(x.at))}</td>
+        <td class="num">${e || w ? `${e ? `<span class="cnt-e" title="Ошибок">${e}</span> ` : ''}${w ? `<span class="cnt-w" title="Предупреждений">${w}</span>` : ''}` : '<span class="cnt-ok">✓</span>'}</td>
+        <td class="act">${d ? '<span class="rowbtn">Открыть</span> ' : ''}<button type="button" class="btn ghost small" data-act="unreject" data-id="${esc(x.no)}">Вернуть в работу</button></td></tr>`; }).join('')}
+    </tbody></table></div>` : `<div class="card empty-card"><b>Отклонённых деклараций за ${accYear()} год пока нет</b>Откройте декларацию, нажмите «Отклонить» и укажите причину — она появится здесь.</div>`}
+  </div>`;
+  updateExportBtn();
+}
+/* список отклонённых в сервисе — выгрузка .xlsx с причинами */
+async function exportRejected() {
+  const R = state.result; if (!R || (!downloads && inClaude)) return;
+  const rows = rejList();
+  const aoa = [['Номер отчёта', 'ИНН', 'Наименование организации', 'Отчётный период', 'Причина отклонения', 'Отклонена', 'Ошибок сейчас', 'Предупреждений сейчас'],
+    ...rows.map(r => { const d = R.decls.find(x => x.no === r.no); return [/^\d{1,15}$/.test(r.no) ? Number(r.no) : r.no, (d ? d.inns : r.inns || []).join(', '), (d ? d.orgs : r.orgs || []).join('; '), r.year, r.reason, fmtDT(r.at), d ? d.errors : r.errors, d ? d.warnings : r.warnings]; })];
+  const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [14, 14, 44, 10, 60, 18, 12, 14].map(w => ({ wch: w })); if (aoa.length > 1) ws['!autofilter'] = { ref: `A1:H${aoa.length}` };
+  XLSX.utils.book_append_sheet(wb, ws, 'Отклонённые');
+  const blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const t = new Date(), p = n => String(n).padStart(2, '0');
+  await saveBlob(`Otklonennye_deklaracii_${accYear()}_${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}.xlsx`, blob, 'Отклонённые_декларации', 'Список отклонённых');
+}
 /* список принятых в сервисе — для обновления статуса в общем файле ДПНВОС */
 async function exportAccepted() {
   const R = state.result; if (!R || (!downloads && inClaude)) return;
@@ -2182,7 +2259,7 @@ function renderDeclList(R, stale) {
   const catOk = d => { const ks = Object.keys(d.cats); return !state.dcats.length || (ks.length > 0 && ks.every(c => state.dcats.includes(c))); };
   const catPresent = CATS.filter(c => R.decls.some(d => d.cats[c]));
   const nAcc = R.decls.filter(isAcc).length;
-  const base = R.decls.filter(d => !isAcc(d) && catOk(d) && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)));
+  const base = R.decls.filter(d => !isDone(d) && catOk(d) && (!q || [d.no, d.inns.join(' '), d.orgs.join(' ')].join(' ').toLowerCase().includes(q)));
   const nI = base.filter(hasIssues).length, nC = base.length - nI;
   const list = base.filter(d => state.dfl === 'all' || (state.dfl === 'err' ? hasIssues(d) : !hasIssues(d))).sort((DSORT[state.dsort] || DSORT.issues)[1]);
   const noDecl = R.objects.filter(o => !o.decls.length);
@@ -2345,7 +2422,7 @@ function applyDecl(v) {
 let downloads = null;
 const inClaude = !!window.claude?.use;
 (async () => { try { downloads = window.claude?.use ? await window.claude.use('downloads') : null; } catch (e) { downloads = null; } updateExportBtn(); })();
-function updateExportBtn() { const ok = downloads || !inClaude; for (const b of document.querySelectorAll('[data-act="export"], [data-act="acc-export"]')) { b.disabled = !ok; b.title = ok ? '' : 'Скачивание недоступно в этом окне просмотра'; } }
+function updateExportBtn() { const ok = downloads || !inClaude; for (const b of document.querySelectorAll('[data-act="export"], [data-act="acc-export"], [data-act="rej-export"]')) { b.disabled = !ok; b.title = ok ? '' : 'Скачивание недоступно в этом окне просмотра'; } }
 const vText = v => !v || v.t === 'na' ? '' : v.t === 'miss' ? 'нет' : v.t === 'empty' ? 'пусто' : +Number(v.n).toPrecision(12);
 function buildReportWorkbook(R, V, X = XLSX) {
   const wb = X.utils.book_new();
@@ -2366,8 +2443,8 @@ function buildReportWorkbook(R, V, X = XLSX) {
   else { const A = aggTotals(objs);
     sheet([['Код ЗВ', 'Класс опасности', 'Наименование вещества', ...TCOLS.map(c => c[1]), 'Объектов'], ['Итого', '', '', ...TCOLS.map(c => totText(A.sum[c[0]])), objs.length],
       ...A.list.map(x => [x.code, hazOf(x.z), x.name, ...TCOLS.map(c => totText(x.v[c[0]])), x.objs.size])], [10, 10, 44, ...TCOLS.map(() => 14), 10], 'Общие данные', true); }
-  if (!V) sheet([['Декларация №', 'Организация', 'ИНН', 'Статус', 'Объектов I', 'Объектов II', 'Объектов III', 'Объектов IV', 'Ошибок', 'Предупреждений', 'Принята'],
-    ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), d.statuses.join(', '), ...['I', 'II', 'III', 'IV'].map(c => d.cats[c]?.n || 0), d.errors, d.warnings, accOf(d.no) ? 'в сервисе ' + fmtDT(accOf(d.no).at) : isAccFile(d) ? 'статус в файле' : ''])], [14, 40, 14, 20, 10, 10, 10, 10, 10, 14, 18], 'Декларации', true);
+  if (!V) sheet([['Декларация №', 'Организация', 'ИНН', 'Статус', 'Объектов I', 'Объектов II', 'Объектов III', 'Объектов IV', 'Ошибок', 'Предупреждений', 'Принята', 'Отклонена'],
+    ...R.decls.map(d => [d.no, d.orgs.join('; '), d.inns.join(', '), d.statuses.join(', '), ...['I', 'II', 'III', 'IV'].map(c => d.cats[c]?.n || 0), d.errors, d.warnings, accOf(d.no) ? 'в сервисе ' + fmtDT(accOf(d.no).at) : isAccFile(d) ? 'статус в файле' : '', rejOf(d.no) ? (rejOf(d.no).reason || 'без причины') + ' (' + fmtDT(rejOf(d.no).at) + ')' : ''])], [14, 40, 14, 20, 10, 10, 10, 10, 10, 14, 18, 40], 'Декларации', true);
   sheet([['Категория', 'Код объекта', 'ИНН', 'Наименование', 'Декларации', 'В реестре', 'Дата исключения', 'Дата актуализации', 'Актуализация', 'ДПНВОС №', 'ДВОС / ПЭК / IV', 'ДВОС №', 'ДВОС дата подачи', 'ДВОС действует до', 'ПЭК №', 'ЗВ ДПНВОС', 'ЗВ ОНВОС', 'ЗВ ДВОС', 'ЗВ ПЭК', 'Ошибок', 'Предупреждений', 'Результат'],
     ...objs.map(o => [o.cat, o.code, o.inn, o.name, o.decls.join(', '), o.inReg ? 'да' : 'нет', fmtDate(o.dateOut), fmtDate(o.dateUpd), UPD_TXT[updState(o.dateUpd, R.settings.year)] || '', o.dpNo || 'нет', o.third[1], o.dvNo, fmtDate(o.dvDate), fmtDate(o.dvUntil), o.hasPek ? (o.pkNo || 'есть') : 'нет', o.zv.DPNVOS ?? '', o.zv.ONVOS ?? '', o.zv.DVOS ?? '', o.zv.PEK ?? '', o.errors, o.warnings, o.errors || o.warnings ? 'есть замечания' : 'прошёл все проверки'])],
     [8, 19, 13, 40, 14, 9, 14, 14, 20, 12, 18, 12, 14, 14, 12, 9, 9, 9, 9, 9, 12, 20], 'Объекты', true);
@@ -2553,6 +2630,7 @@ async function restoreSaved() {
    11. СОБЫТИЯ
    ===================================================================== */
 document.addEventListener('click', e => {
+  if (e.target === $('#rej-modal')) { closeRejectModal(); return; }
   const el = e.target.closest('[data-act]'); if (!el) return;
   const act = el.dataset.act, d = el.dataset.doc;
   if (act === 'copy') { e.stopPropagation(); copyText(el.dataset.v, el.dataset.kind || 'ИНН').then(ok => { if (ok) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); } }); return; }
@@ -2576,6 +2654,11 @@ document.addEventListener('click', e => {
   else if (act === 'ws-open') { SETTINGS.decl = el.dataset.id; state.cat = 'all'; state.imp = 'all'; state.filter = { sev: 'all', q: '', line: 'all', onlyBad: false, grp: state.filter.grp || 'zv' }; state.qs = {}; renderSummary(state.result); const b = document.querySelector(`.ws-item[data-id="${CSS.escape(el.dataset.id)}"]`); if (b) b.focus({ preventScroll: true }); }
   else if (act === 'wsf') { state.wsf = el.dataset.id; renderSummary(state.result); }
   else if (act === 'accept' || act === 'unaccept') { e.stopPropagation(); act === 'accept' ? acceptDecl(el.dataset.id) : unacceptDecl(el.dataset.id); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); return; }
+  else if (act === 'reject') { openRejectModal(el.dataset.id); }
+  else if (act === 'unreject') { unrejectDecl(el.dataset.id); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); toast(`Декларация № ${el.dataset.id} возвращена в работу`); }
+  else if (act === 'rej-ok') { const no = rejTarget, reason = $('#rej-reason').value.trim(); if (!reason) { toast('Укажите причину отклонения'); return; } rejectDecl(no, reason); closeRejectModal(); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); toast(`Декларация № ${no} отклонена — она в разделе «Отклонённые»`); }
+  else if (act === 'rej-cancel') closeRejectModal();
+  else if (act === 'rej-export') exportRejected();
   else if (act === 'acc-export') exportAccepted();
   else if (act === 'dfl') { state.dfl = el.dataset.id; renderReport(); }
   else if (act === 'dcat') { const c = el.dataset.id; if (c === 'all') state.dcats = []; else state.dcats = state.dcats.includes(c) ? state.dcats.filter(x => x !== c) : [...state.dcats, c].sort((a, b) => CATS.indexOf(a) - CATS.indexOf(b)); saveListPrefs(); renderReport(); }
@@ -2683,6 +2766,7 @@ document.addEventListener('input', e => {
   if (e.target.id === 'flt-list') { state.listQ = e.target.value; const pos = e.target.selectionStart; renderReport(); const i = $('#flt-list'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } }
 });
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#rej-modal')?.hidden) { closeRejectModal(); return; }
   if (e.target.id === 'p-decl' && e.key === 'Enter') { e.preventDefault(); applyDecl(e.target.value); }
   if (e.target.id === 'g-q' && e.key === 'Escape') { hideSearchResults(); }
   if (e.target.id === 'g-q' && e.key === 'ArrowDown') { const f = document.querySelector('#g-res .gr, #g-res .gall'); if (f) { e.preventDefault(); f.focus(); } }
