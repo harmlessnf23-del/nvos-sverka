@@ -735,6 +735,9 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
 .modal-card h3{margin:0;font-size:18px;font-weight:600}
 .modal-card textarea{width:100%;border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;font:inherit;resize:vertical;min-height:84px}
 .modal-card textarea:focus{outline:2px solid var(--accent);outline-offset:0}
+.modal-card textarea.bad{border-color:var(--err)}
+.modal-card textarea.bad:focus{outline-color:var(--err)}
+.modal-card #act-err{color:var(--err);font-size:13px}
 .modal-acts{display:flex;justify-content:flex-end;gap:8px}
 </style>
 
@@ -778,6 +781,7 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
   <div class="modal-card">
     <h3 id="act-modal-title"></h3>
     <p class="note" id="act-hint" style="margin:0"></p>
+    <p class="note" id="act-err" style="margin:0" hidden></p>
     <label class="sr" for="act-comment">Комментарий</label>
     <textarea id="act-comment" rows="3" placeholder=""></textarea>
     <div class="modal-acts">
@@ -1568,6 +1572,17 @@ const waterOnly = (P, z) => { let w = false, a = false; for (const [d, zv] of P)
    они есть в реестре ОНВОС, но по ним не начисляется плата и в декларацию о плате не включаются.
    Коды нормализуются как ключи сверки (ведущие нули отбрасываются). */
 const IGNORE_DPNVOS_MISSING = new Set(['0168', '0626', '3004', '1046', '1238'].map(normZv));
+/* Группы «агрегированное вещество»: в ДПНВОС одно вещество (dp) = сумма нескольких веществ реестра ОНВОС (on).
+   Пример: 9903 (ДПНВОС, выбросы) = 2907 + 2908 + 2909 (ОНВОС). */
+const ZV_GROUPS = [{ dp: normZv('9903'), on: ['2907', '2908', '2909'].map(normZv) }];
+const GROUP_BY_DP = new Map(ZV_GROUPS.map(g => [g.dp, g]));
+const GROUP_BY_ON = new Map();
+for (const g of ZV_GROUPS) for (const c of g.on) GROUP_BY_ON.set(c, g);
+/* примечание «сумма»: перечисляет коды и массы веществ реестра, из которых складывается агрегированное вещество */
+function groupSumNote(o, g) {
+  const parts = g.on.map(c => { const e = o.on?.zv.get(c); return `${c} (${e && e.hasMass ? fmtNum(e.mass) + ' т' : '—'})`; });
+  return `сумма: ${parts.join(' + ')}`;
+}
 
 function checkObject(o, M) {
   const out = [], cat = o.cat, Y = M.Y, tol = M.tol;
@@ -1620,7 +1635,8 @@ function checkObject(o, M) {
   if (P.length >= 2) for (const z of unionZv(P)) {
     const wOnly = waterOnly(P, z);
     let missing = P.filter(([d, zv]) => !zv.has(z) && !(wOnly && (d === 'DVOS' || d === 'PEK'))).map(([d]) => d);
-    if (IGNORE_DPNVOS_MISSING.has(z)) missing = missing.filter(d => d !== 'DPNVOS');
+    if (IGNORE_DPNVOS_MISSING.has(z) || GROUP_BY_ON.has(z)) missing = missing.filter(d => d !== 'DPNVOS');
+    if (GROUP_BY_DP.has(z)) missing = missing.filter(d => d !== 'ONVOS');
     if (!missing.length) continue;
     const onlyDp = missing.length === 1 && missing[0] === 'DPNVOS' && P.some(([d]) => d === 'ONVOS');
     out.push(f(o, '04', { ...zvInfo(P, z), vals: valsOf(o, P, z),
@@ -1660,6 +1676,17 @@ function checkObject(o, M) {
     const main = parts.find(x => x.sev === 'error') || parts[0];
     out.push(f(o, '05', { ...zvInfo(P, z), vals: valsOf(o, P, z), kind: main.kind, kindCls: main.cls || '', severity: parts.some(x => x.sev === 'error') ? 'error' : 'warning', message: parts.map(x => x.msg).join('; ') }));
   }
+  /* 05а — агрегированные вещества: масса ДПНВОС (столбец W) = сумме веществ реестра ОНВОС */
+  for (const g of ZV_GROUPS) {
+    const dp = o.dp?.rep.zv.get(g.dp), onE = g.on.map(c => o.on?.zv.get(c)).filter(e => e && e.hasMass);
+    if (!dp || !onE.length) continue;
+    if (!dp.hasMass) { out.push(f(o, '05', { ...zvInfo(P, g.dp), vals: valsOf(o, P, g.dp), severity: 'error', kind: 'Пусто', message: `масса не указана в ДПНВОС ${g.dp}` })); continue; }
+    const onSum = onE.reduce((a, e) => a + e.mass, 0), dd = dp.mass - onSum;
+    if (Math.abs(dd) > tol) {
+      const detail = g.on.map(c => { const e = o.on?.zv.get(c); return `${c} ${e && e.hasMass ? fmtNum(e.mass) + ' т' : '—'}`; }).join(' + ');
+      out.push(f(o, '05', { ...zvInfo(P, g.dp), vals: valsOf(o, P, g.dp), severity: dd > tol ? 'error' : 'warning', kind: 'Сумма группы', kindCls: dd > tol ? '' : 'k-low', message: `ДПНВОС ${g.dp} ${fmtNum(dp.mass)} т ≠ ОНВОС ${detail} = ${fmtNum(onSum)} т` }));
+    }
+  }
   return out;
 }
 
@@ -1680,9 +1707,11 @@ function buildLines(M, findings) {
       const fs = zf.get(o.key + '|' + z), err = fs && fs.some(x => x.severity === 'error');
       const info = zvInfo(P, z), rows = {};
       for (const [d, zv] of P) { const e = zv.get(z); if (e) rows[d] = e.rows; }
+      const grp = GROUP_BY_DP.get(z);
       lines.push({ objKey: o.key, code: o.code, inn: o.inn, name: o.name, cat: o.cat, decls: o.decls, zvKey: z, zvCode: info.zvCode, zvName: info.zvName, imp: impOfZv(P, z), vals: valsOf(o, P, z), rows, srcs: srcRowsOf(o, P, z, M.tol),
         status: err ? 'bad' : fs ? 'warn' : notes.length ? 'obj' : 'ok',
-        note: fs ? [...new Set(fs.map(x => x.kind || x.message))].join('; ') : notes.length ? 'По объекту: ' + [...new Set(notes)].join('; ') : '' });
+        note: fs ? [...new Set(fs.map(x => x.kind || x.message))].join('; ') : notes.length ? 'По объекту: ' + [...new Set(notes)].join('; ') : '',
+        gsum: grp ? groupSumNote(o, grp) : '' });
     }
   }
   return lines;
@@ -1819,11 +1848,15 @@ function openActionModal(mode, no) {
   const isReject = mode === 'reject';
   $('#act-modal-title').textContent = isReject ? 'Отклонить декларацию № ' + no : 'Дополнительная проверка декларации № ' + no;
   $('#act-hint').textContent = isReject ? 'Укажите причину отклонения — она сохранится в этом браузере и попадёт в раздел «Отклонённые» и в выгрузку.' : 'Укажите, что нужно проверить — комментарий сохранится в этом браузере и попадёт в раздел «На проверке» и в выгрузку.';
-  const ta = $('#act-comment'); ta.value = ''; ta.placeholder = isReject ? 'Например: неверно указана масса вещества, нет объекта в реестре…' : 'Например: перепроверить массу вещества по источникам…';
+  const ta = $('#act-comment'); ta.value = ''; ta.classList.remove('bad'); const err = $('#act-err'); if (err) err.hidden = true;
+  ta.placeholder = isReject ? 'Например: неверно указана масса вещества, нет объекта в реестре…' : 'Например: перепроверить массу вещества по источникам…';
   $('#act-ok').textContent = isReject ? 'Отклонить' : 'На проверку';
   $('#act-modal').hidden = false; ta.focus();
 }
 function closeActionModal() { $('#act-modal').hidden = true; actTarget = null; actMode = null; }
+/* ошибка прямо в модалке, а не тостом внизу экрана — иначе кажется, что кнопка не работает */
+function actModalError(msg) { const ta = $('#act-comment'), err = $('#act-err'); if (err) { err.textContent = msg; err.hidden = false; } ta.classList.add('bad'); ta.focus(); }
+$('#act-comment').addEventListener('input', () => { $('#act-comment').classList.remove('bad'); const err = $('#act-err'); if (err) err.hidden = true; });
 const isAccFile = d => isAccepted(d);
 const isRej = d => !!rejOf(d.no);
 const isRev = d => !!revOf(d.no);
@@ -2218,6 +2251,7 @@ function renderSummary(R) {
   </div>`;
   const V = currentView();
   if (V && !V.notFound) renderDeclCard($('#ws-detail'), R, V, '');
+  else if (D.length && D.every(isDone)) $('#ws-detail').innerHTML = '<div class="empty-card"><b>Все декларации обработаны</b>Принятые, отклонённые и отправленные на проверку собраны в одноимённых разделах.<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button type="button" class="btn small" data-act="nav" data-id="accepted">Принятые</button><button type="button" class="btn small" data-act="nav" data-id="rejected">Отклонённые</button><button type="button" class="btn small" data-act="nav" data-id="review">На проверке</button></div></div>';
   else $('#ws-detail').innerHTML = '<div class="empty-card"><b>Нет деклараций под фильтр</b>Измените фильтр слева.</div>';
   updateExportBtn();
 }
@@ -2436,7 +2470,7 @@ function renderTable() {
         const ss = srcsOf(l);
         return `<tr${ss && ss.length ? ` class="rowlink${open ? ' open' : ''}" data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}<small class="note blk">${l.cat} кат.</small></td>
         <td class="obj">${codeBtn(l.code)}<small>${esc(l.name)}</small></td>
-        <td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}<small>${esc(l.zvName)}</small>${state.imp === 'all' && l.imp ? `<small class="blk">${impTag(l.imp)}</small>` : ''}${ss && ss.length ? `<span class="srcn">источников: ${ss.length}</span>` : ''}</td>
+        <td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}<small>${esc(l.zvName)}</small>${l.gsum ? `<small class="blk">${esc(l.gsum)}</small>` : ''}${state.imp === 'all' && l.imp ? `<small class="blk">${impTag(l.imp)}</small>` : ''}${ss && ss.length ? `<span class="srcn">источников: ${ss.length}</span>` : ''}</td>
         ${VCOLS.map(c => valCell(l.vals[c[0]])).join('')}<td class="note">${esc(l.note)}</td></tr>` +
         (open && ss ? ss.map(x => `<tr class="sub"><td>${pill(x.status)}</td><td class="obj">${x.imp === 'water' ? 'ист. сбросов' : x.imp === 'air' ? 'ист. выбросов' : 'источник'} ${esc(x.src)}</td><td class="zv"><span class="mono">${esc(l.zvCode)}</span>${hazTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length.toLocaleString('ru-RU')}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
@@ -2522,7 +2556,7 @@ function buildReportWorkbook(R, V, X = XLSX) {
     [6, 15, 9, 8, 19, 13, 36, 14, 9, 10, 36, ...VCOLS.map(() => 13), 18, 60, 10, 10], 'Замечания', true);
   const rowsTxt = l => ['DPNVOS', 'ONVOS', 'DVOS', 'PEK'].filter(d => l.rows[d]).map(d => `${short(d)}: ${l.rows[d].slice(0, 10).join(', ')}${l.rows[d].length > 10 ? '…' : ''}`).join('; ');
   const head = ['Результат', 'Категория', 'Код объекта', 'ИНН', 'Наименование объекта', 'Воздействие', 'Код ЗВ', 'Класс опасности', 'Наименование ЗВ', ...VCOLS.map(c => c[1]), 'Комментарий', 'Строки в файлах'];
-  const toRow = l => [LINE[l.status][1], l.cat, l.code, l.inn, l.name, IMP_TXT[l.imp] || '', l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.map(c => vText(l.vals[c[0]])), l.note, rowsTxt(l)];
+  const toRow = l => [LINE[l.status][1], l.cat, l.code, l.inn, l.name, IMP_TXT[l.imp] || '', l.zvCode, hazOf(l.zvKey), l.zvName, ...VCOLS.map(c => vText(l.vals[c[0]])), l.note ? l.note + (l.gsum ? '; ' + l.gsum : '') : (l.gsum || ''), rowsTxt(l)];
   const w = [26, 8, 19, 13, 36, 14, 9, 10, 40, ...VCOLS.map(() => 13), 50, 40];
   sheet([head, ...lines.filter(l => l.status === 'ok').map(toRow)], w, 'Прошли проверки', true);
   sheet([head, ...lines.map(toRow)], w, 'Сверка по веществам', true);
@@ -2726,7 +2760,7 @@ document.addEventListener('click', e => {
   else if (act === 'review') { openActionModal('review', el.dataset.id); }
   else if (act === 'unreject') { unrejectDecl(el.dataset.id); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); toast(`Декларация № ${el.dataset.id} возвращена в работу`); }
   else if (act === 'unreview') { unreviewDecl(el.dataset.id); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); toast(`Декларация № ${el.dataset.id} возвращена в работу`); }
-  else if (act === 'act-ok') { const no = actTarget, mode = actMode, comment = $('#act-comment').value.trim(); if (!comment) { toast(mode === 'review' ? 'Укажите комментарий' : 'Укажите причину отклонения'); return; } mode === 'review' ? reviewDecl(no, comment) : rejectDecl(no, comment); closeActionModal(); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); toast(mode === 'review' ? `Декларация № ${no} отправлена на дополнительную проверку — она в разделе «На проверке»` : `Декларация № ${no} отклонена — она в разделе «Отклонённые»`); }
+  else if (act === 'act-ok') { const no = actTarget, mode = actMode, comment = $('#act-comment').value.trim(); if (!comment) { actModalError(mode === 'review' ? 'Укажите, что нужно проверить, — комментарий обязателен' : 'Укажите причину отклонения — она попадёт в раздел «Отклонённые» и в выгрузку'); return; } mode === 'review' ? reviewDecl(no, comment) : rejectDecl(no, comment); closeActionModal(); renderNav(); if (state.page === 'summary') renderSummary(state.result); else renderReport(); toast(mode === 'review' ? `Декларация № ${no} отправлена на дополнительную проверку — она в разделе «На проверке»` : `Декларация № ${no} отклонена — она в разделе «Отклонённые»`); }
   else if (act === 'act-cancel') closeActionModal();
   else if (act === 'rej-export') exportRejected();
   else if (act === 'rev-export') exportReview();
