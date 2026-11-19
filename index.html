@@ -1588,7 +1588,7 @@ function groupCell(o, g, doc) {
   return { t: 'group', parts, sum };
 }
 const groupOnText = v => v.parts.map(p => `${p.code} (${p.mass != null ? fmtNum(p.mass) : '—'})`).join('\n') + '\n= ' + fmtNum(v.sum);
-const groupOnHtml = v => v.parts.map(p => `${esc(p.code)} (${p.mass != null ? esc(fmtNum(p.mass)) : '—'})`).join('<br>') + '<br>= ' + esc(fmtNum(v.sum));
+const groupOnHtml = v => v.parts.map(p => `${esc(p.code)} (${p.mass != null ? esc(fmtNum(p.mass)) : '—'})`).join('<br>') + '<br><b>= ' + esc(fmtNum(v.sum)) + '</b>';
 
 function checkObject(o, M) {
   const out = [], cat = o.cat, Y = M.Y, tol = M.tol;
