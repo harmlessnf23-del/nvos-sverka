@@ -1564,6 +1564,10 @@ const impOfZv = (P, z) => { let w = false, a = false; for (const [d, zv] of P) i
 const impOfSrc = (x, fallback) => x && (x.air || x.water) ? (x.air && x.water ? 'both' : x.water ? 'water' : 'air') : (fallback === 'both' ? '' : fallback);
 const IMP_TXT = { air: 'выброс', water: 'сброс', both: 'выброс и сброс', '': '' };
 const waterOnly = (P, z) => { let w = false, a = false; for (const [d, zv] of P) if (d === 'DPNVOS' || d === 'ONVOS') { const e = zv.get(z); if (e) { w ||= e.water; a ||= e.air; } } return w && !a; };
+/* вещества, отсутствие которых в ДПНВОС (выбросы) не считается замечанием:
+   они есть в реестре ОНВОС, но по ним не начисляется плата и в декларацию о плате не включаются.
+   Коды нормализуются как ключи сверки (ведущие нули отбрасываются). */
+const IGNORE_DPNVOS_MISSING = new Set(['0168', '0626', '3004', '1046', '1238'].map(normZv));
 
 function checkObject(o, M) {
   const out = [], cat = o.cat, Y = M.Y, tol = M.tol;
@@ -1615,7 +1619,8 @@ function checkObject(o, M) {
   const P = presentDocs(o);
   if (P.length >= 2) for (const z of unionZv(P)) {
     const wOnly = waterOnly(P, z);
-    const missing = P.filter(([d, zv]) => !zv.has(z) && !(wOnly && (d === 'DVOS' || d === 'PEK'))).map(([d]) => d);
+    let missing = P.filter(([d, zv]) => !zv.has(z) && !(wOnly && (d === 'DVOS' || d === 'PEK'))).map(([d]) => d);
+    if (IGNORE_DPNVOS_MISSING.has(z)) missing = missing.filter(d => d !== 'DPNVOS');
     if (!missing.length) continue;
     const onlyDp = missing.length === 1 && missing[0] === 'DPNVOS' && P.some(([d]) => d === 'ONVOS');
     out.push(f(o, '04', { ...zvInfo(P, z), vals: valsOf(o, P, z),
