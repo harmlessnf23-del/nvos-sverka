@@ -782,7 +782,7 @@ tr.rowlink:hover .rowbtn{background:var(--accent-hover)}
     <textarea id="act-comment" rows="3" placeholder=""></textarea>
     <div class="modal-acts">
       <button type="button" class="btn" data-act="act-cancel">Отмена</button>
-      <button type="button" class="btn primary" data-act="act-ok">Отклонить</button>
+      <button type="button" class="btn primary" id="act-ok" data-act="act-ok">Отклонить</button>
     </div>
   </div>
 </div>
@@ -1812,7 +1812,7 @@ let actTarget = null, actMode = null;
 function openActionModal(mode, no) {
   actMode = mode; actTarget = no;
   const isReject = mode === 'reject';
-  $('#act-modal-title').textContent = (isReject ? 'Отклонить' : 'Дополнительная проверка') + ' декларацию № ' + no;
+  $('#act-modal-title').textContent = isReject ? 'Отклонить декларацию № ' + no : 'Дополнительная проверка декларации № ' + no;
   $('#act-hint').textContent = isReject ? 'Укажите причину отклонения — она сохранится в этом браузере и попадёт в раздел «Отклонённые» и в выгрузку.' : 'Укажите, что нужно проверить — комментарий сохранится в этом браузере и попадёт в раздел «На проверке» и в выгрузку.';
   const ta = $('#act-comment'); ta.value = ''; ta.placeholder = isReject ? 'Например: неверно указана масса вещества, нет объекта в реестре…' : 'Например: перепроверить массу вещества по источникам…';
   $('#act-ok').textContent = isReject ? 'Отклонить' : 'На проверку';
