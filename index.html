@@ -1587,7 +1587,8 @@ function groupCell(o, g, doc) {
   const sum = parts.reduce((a, p) => a + (p.mass || 0), 0);
   return { t: 'group', parts, sum };
 }
-const groupOnText = v => v.parts.map(p => `${p.code} (${p.mass != null ? fmtNum(p.mass) : '—'})`).join(' + ') + ' = ' + fmtNum(v.sum);
+const groupOnText = v => v.parts.map(p => `${p.code} (${p.mass != null ? fmtNum(p.mass) : '—'})`).join('\n') + '\n= ' + fmtNum(v.sum);
+const groupOnHtml = v => v.parts.map(p => `${esc(p.code)} (${p.mass != null ? esc(fmtNum(p.mass)) : '—'})`).join('<br>') + '<br>= ' + esc(fmtNum(v.sum));
 
 function checkObject(o, M) {
   const out = [], cat = o.cat, Y = M.Y, tol = M.tol;
@@ -2030,7 +2031,7 @@ function valCell(v) {
   if (!v || v.t === 'na') return '<td class="v na">—</td>';
   if (v.t === 'miss') return '<td class="v miss"><span>нет</span></td>';
   if (v.t === 'empty') return '<td class="v miss"><span>пусто</span></td>';
-  if (v.t === 'group') return `<td class="v group" title="Сумма веществ по документам (агрегированное вещество)">${esc(groupOnText(v))}</td>`;
+  if (v.t === 'group') return `<td class="v group" title="Сумма веществ по документам (агрегированное вещество)">${groupOnHtml(v)}</td>`;
   if (v.all) return `<td class="v allsrc" title="В ДПНВОС нет разбивки по источникам — показана масса вещества по всем источникам">${fmtNum(v.n)} <small>Σ</small></td>`;
   return `<td class="v">${fmtNum(v.n)}</td>`;
 }
@@ -2554,7 +2555,7 @@ function updateExportBtn() { const ok = downloads || !inClaude; for (const b of 
 const vText = v => !v || v.t === 'na' ? '' : v.t === 'miss' ? 'нет' : v.t === 'empty' ? 'пусто' : v.t === 'group' ? groupOnText(v) : +Number(v.n).toPrecision(12);
 function buildReportWorkbook(R, V, X = XLSX) {
   const wb = X.utils.book_new();
-  const sheet = (aoa, cols, name, filter) => { const s = X.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; X.utils.book_append_sheet(wb, s, name); return s; };
+  const sheet = (aoa, cols, name, filter) => { const s = X.utils.aoa_to_sheet(aoa); s['!cols'] = cols.map(w => ({ wch: w })); if (filter && aoa.length > 1) s['!autofilter'] = { ref: `A1:${colName(aoa[0].length - 1)}${aoa.length}` }; for (const k in s) if (k[0] !== '!' && s[k].v != null && String(s[k].v).includes('\n')) s[k].s = { alignment: { wrapText: true } }; X.utils.book_append_sheet(wb, s, name); return s; };
   const keys = V ? V.keys : null, inV = x => !keys || keys.has(x.objKey || x.key);
   const objs = R.objects.filter(inV), fnd = R.findings.filter(inV), lines = R.lines.filter(inV), D = V?.decl;
   const byCat = c => objs.filter(o => o.cat === c);
