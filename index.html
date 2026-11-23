@@ -2051,6 +2051,7 @@ const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" s
 const innBtns = inns => inns.filter(Boolean).map(i => `<button type="button" class="cpy" data-act="copy" data-v="${esc(i)}" title="Скопировать ИНН">ИНН ${esc(i)}${COPY_ICON}</button>`).join(' ') || '<span class="note">ИНН не указан</span>';
 /* код объекта с копированием по клику (строку при этом не открывает) */
 const codeBtn = c => c ? `<button type="button" class="cpy cpy-code" data-act="copy" data-kind="Код объекта" data-v="${esc(c)}" title="Скопировать код объекта">${esc(c)}${COPY_ICON}</button>` : '';
+const declNoBtn = no => no ? `<button type="button" class="cpy cpy-code" data-act="copy" data-kind="Номер декларации" data-v="${esc(no)}" title="Скопировать номер декларации">${esc(no)}${COPY_ICON}</button>` : '';
 async function copyText(v, kind = 'ИНН') {
   let ok = false;
   try { await navigator.clipboard.writeText(v); ok = true; } catch (e) {
@@ -2135,7 +2136,7 @@ function renderDeclCard(box, R, V, stale) {
     ${stale}
     <div class="decl-card">
       <div class="decl-h"><div><div class="crumb">${D ? 'Декларация о плате за НВОС' : 'Объекты природопользователей без декларации'}</div>
-        <h2>${D ? '№ ' + esc(D.no) : 'Без декларации'}</h2>
+        <h2>${D ? '№ ' + declNoBtn(D.no) : 'Без декларации'}</h2>
         <div class="note">${D ? `${esc(D.orgs.join('; ') || 'организация не указана')} · ${innBtns(D.inns)} · отчётный период ${esc(D.years.join(', ') || '—')} · ${esc(D.statuses.join(', ') || 'статус не указан')} · объектов в декларации: ${D.declared}, всего в сверке: ${objs.length}` : `Действующие объекты реестра, ДВОС и ПЭК, ИНН которых нет ни в одной декларации за ${R.settings.year} — ${objs.length}`}</div></div>
         <div class="decl-acts">${D ? (rev ? `<span class="pill upd acc-pill" title="Отправлена на дополнительную проверку">⟳ На проверке ${esc(fmtDT(rev.at))}</span><button class="btn small" data-act="unreview" data-id="${esc(D.no)}">Вернуть в работу</button><span class="note blk" style="flex-basis:100%">Комментарий: ${esc(rev.comment) || 'не указан'}</span>`
           : rej ? `<span class="pill fail acc-pill" title="Отклонена в сервисе">✕ Отклонена ${esc(fmtDT(rej.at))}</span><button class="btn small" data-act="unreject" data-id="${esc(D.no)}">Вернуть в работу</button><span class="note blk" style="flex-basis:100%">Причина: ${esc(rej.reason) || 'не указана'}</span>`
@@ -2302,7 +2303,7 @@ function renderAccepted(R) {
       ${nSvc ? `<button type="button" class="btn primary small" data-act="acc-export">${DL_ICON}Скачать список принятых (.xlsx)</button>` : ''}</div>
     ${list.length ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Принята</th><th>Замечания сейчас</th><th><span class="sr">Действия</span></th></tr></thead><tbody>
       ${list.map(x => { const d = x.d, a = x.a || {}, e = d ? d.errors : a.errors, w = d ? d.warnings : a.warnings;
-        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${esc(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
+        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${declNoBtn(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
         <td>${esc((d ? d.orgs : a.orgs || []).join('; ') || '—')}<br>${innBtns(d ? d.inns : a.inns || [])}</td>
         <td class="num">${x.src === 'service' ? `<span class="pill ok">в сервисе</span><small class="note blk">${esc(fmtDT(x.at))}</small>${d && (d.errors !== a.errors || d.warnings !== a.warnings) ? `<small class="note blk">при принятии: ${a.errors} ош., ${a.warnings} пред.</small>` : ''}` : '<span class="pill skip">статус в файле</span>'}</td>
         <td class="num">${e || w ? `${e ? `<span class="cnt-e" title="Ошибок">${e}</span> ` : ''}${w ? `<span class="cnt-w" title="Предупреждений">${w}</span>` : ''}` : '<span class="cnt-ok">✓</span>'}</td>
@@ -2322,7 +2323,7 @@ function renderRejected(R) {
       ${all.length ? `<button type="button" class="btn primary small" data-act="rej-export">${DL_ICON}Скачать список отклонённых (.xlsx)</button>` : ''}</div>
     ${list.length ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Причина отклонения</th><th>Отклонена</th><th>Замечания сейчас</th><th><span class="sr">Действия</span></th></tr></thead><tbody>
       ${list.map(x => { const d = x.d, e = d ? d.errors : x.errors, w = d ? d.warnings : x.warnings;
-        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${esc(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
+        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${declNoBtn(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
         <td>${esc((d ? d.orgs : x.orgs || []).join('; ') || '—')}<br>${innBtns(d ? d.inns : x.inns || [])}</td>
         <td class="note">${esc(x.reason) || '<span class="note">без причины</span>'}</td>
         <td class="num">${esc(fmtDT(x.at))}</td>
@@ -2343,7 +2344,7 @@ function renderReview(R) {
       ${all.length ? `<button type="button" class="btn primary small" data-act="rev-export">${DL_ICON}Скачать список (.xlsx)</button>` : ''}</div>
     ${list.length ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Комментарий</th><th>Отправлена</th><th>Замечания сейчас</th><th><span class="sr">Действия</span></th></tr></thead><tbody>
       ${list.map(x => { const d = x.d, e = d ? d.errors : x.errors, w = d ? d.warnings : x.warnings;
-        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${esc(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
+        return `<tr${d ? ` class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(x.no)}" tabindex="0"` : ''}><td class="num"><b>${declNoBtn(x.no)}</b>${d ? '' : '<small class="note blk">нет в загруженном ДПНВОС</small>'}</td>
         <td>${esc((d ? d.orgs : x.orgs || []).join('; ') || '—')}<br>${innBtns(d ? d.inns : x.inns || [])}</td>
         <td class="note">${esc(x.comment) || '<span class="note">без комментария</span>'}</td>
         <td class="num">${esc(fmtDT(x.at))}</td>
@@ -2429,10 +2430,10 @@ function renderDeclList(R, stale) {
       <span class="dfl-sp"></span>
       ${noDecl.length ? `<button class="btn small" data-act="open-decl" data-id="__none__">Объекты без декларации · ${noDecl.length.toLocaleString('ru-RU')}</button>` : ''}</div>
     ${state.top === 'summary' ? `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th>${TCOLS.map(c => `<th class="vh">${thl(c[1])}</th>`).join('')}<th></th></tr></thead><tbody>
-      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td>
+      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="summary" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${declNoBtn(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td>
         ${TCOLS.map(c => totCell(d.tot[c[0]], false)).join('')}<td class="act"><span class="rowbtn">По веществам</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>` : `<div class="fwrap"><table class="ftbl"><thead><tr><th>Декларация №</th><th>Организация / ИНН</th><th>Статус</th>${CATS.slice(0, 4).map(c => `<th>${c}</th>`).join('')}<th>Замечания</th><th><span class="sr">Действие</span></th></tr></thead><tbody>
-      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${esc(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td><td class="note">${esc(d.statuses.join(', '))}</td>
+      ${shown.map(d => `<tr class="rowlink" data-act="open-decl" data-view="objects" data-id="${esc(d.no)}" tabindex="0"><td class="num"><b>${declNoBtn(d.no)}</b></td><td>${esc(d.orgs.join('; ') || '—')}<br>${innBtns(d.inns)}</td><td class="note">${esc(d.statuses.join(', '))}</td>
         ${CATS.slice(0, 4).map(c => `<td class="num">${d.cats[c] ? `${d.cats[c].n}${d.cats[c].e ? ` <span class="pill fail">${d.cats[c].e}</span>` : ''}` : '<span class="note">—</span>'}</td>`).join('')}
         <td class="num">${d.errors || d.warnings ? `${d.errors ? `<span class="cnt-e" title="Ошибок">${d.errors}</span> ` : ''}${d.warnings ? `<span class="cnt-w" title="Предупреждений">${d.warnings}</span>` : ''}` : '<span class="cnt-ok">✓</span>'}</td><td class="act"><span class="rowbtn">Открыть</span></td></tr>`).join('')}
     </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length}. Уточните поиск.</div>` : ''}${!list.length ? '<div class="empty">Ничего не найдено.</div>' : ''}</div>`}
