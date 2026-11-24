@@ -1573,6 +1573,8 @@ function srcRowsOf(o, P, z, tol) {
 const impOfZv = (P, z) => { let w = false, a = false; for (const [d, zv] of P) if (d === 'DPNVOS' || d === 'ONVOS') { const e = zv.get(z); if (e) { w ||= e.water; a ||= e.air; } } return w && a ? 'both' : w ? 'water' : a ? 'air' : ''; };
 const impOfSrc = (x, fallback) => x && (x.air || x.water) ? (x.air && x.water ? 'both' : x.water ? 'water' : 'air') : (fallback === 'both' ? '' : fallback);
 const IMP_TXT = { air: 'выброс', water: 'сброс', both: 'выброс и сброс', '': '' };
+/* подпись источника в списке: «ист. выбросов», «ист. сбросов» или «источник» */
+const srcKindTxt = imp => imp === 'water' ? 'ист. сбросов' : imp === 'air' ? 'ист. выбросов' : 'источник';
 const waterOnly = (P, z) => { let w = false, a = false; for (const [d, zv] of P) if (d === 'DPNVOS' || d === 'ONVOS') { const e = zv.get(z); if (e) { w ||= e.water; a ||= e.air; } } return w && !a; };
 /* вещества, отсутствие которых в ДПНВОС (выбросы) не считается замечанием:
    они есть в реестре ОНВОС, но по ним не начисляется плата и в декларацию о плате не включаются.
@@ -2055,6 +2057,7 @@ const codeBtn = c => c ? `<button type="button" class="cpy cpy-code" data-act="c
 const declNoBtn = no => no ? `<button type="button" class="cpy cpy-code" data-act="copy" data-kind="Номер декларации" data-v="${esc(no)}" title="Скопировать номер декларации">${esc(no)}${COPY_ICON}</button>` : '';
 const zvCodeBtn = c => c ? `<button type="button" class="cpy cpy-code mono" data-act="copy" data-kind="Код ЗВ" data-v="${esc(c)}" title="Скопировать код ЗВ">${esc(c)}${COPY_ICON}</button>` : '';
 const zvNameBtn = n => n ? `<button type="button" class="cpy cpy-code zvnm" data-act="copy" data-kind="Наименование ЗВ" data-v="${esc(n)}" title="Скопировать наименование ЗВ">${esc(n)}${COPY_ICON}</button>` : '';
+const srcsCopyBtn = ss => ss && ss.length >= 2 ? ` <button type="button" class="cpy" data-act="copy" data-kind="Источники" data-v="${esc(ss.map(x => `${srcKindTxt(x.imp)} ${x.src}`).join('\n')).replace(/\n/g, '&#10;')}" title="Скопировать наименования всех источников">${COPY_ICON}</button>` : '';
 async function copyText(v, kind = 'ИНН') {
   let ok = false;
   try { await navigator.clipboard.writeText(v); ok = true; } catch (e) {
@@ -2511,9 +2514,9 @@ function renderTable() {
         const ss = srcsOf(l), cls = (ss && ss.length ? `rowlink${open ? ' open' : ''}` : '') + ignCls(l.zvKey);
         return `<tr${cls ? ` class="${cls}"` : ''}${ss && ss.length ? ` data-act="line" data-id="${esc(id)}" tabindex="0"` : ''}><td>${pill(l.status)}<small class="note blk">${l.cat} кат.</small></td>
         <td class="obj">${codeBtn(l.code)}<small>${esc(l.name)}</small></td>
-        <td class="zv">${zvCodeBtn(l.zvCode)}${hazTag(l.zvKey)}${ignTag(l.zvKey)}${zvNameBtn(l.zvName)}${state.imp === 'all' && l.imp ? `<small class="blk">${impTag(l.imp)}</small>` : ''}${ss && ss.length ? `<span class="srcn">источников: ${ss.length}</span>` : ''}</td>
+        <td class="zv">${zvCodeBtn(l.zvCode)}${hazTag(l.zvKey)}${ignTag(l.zvKey)}${zvNameBtn(l.zvName)}${state.imp === 'all' && l.imp ? `<small class="blk">${impTag(l.imp)}</small>` : ''}${ss && ss.length ? `<span class="srcn">источников: ${ss.length}</span>` : ''}${srcsCopyBtn(ss)}</td>
         ${VCOLS.map(c => valCell(l.vals[c[0]])).join('')}<td class="note">${esc(l.note)}</td></tr>` +
-        (open && ss ? ss.map(x => `<tr class="sub${ignCls(l.zvKey)}"><td>${pill(x.status)}</td><td class="obj">${x.imp === 'water' ? 'ист. сбросов' : x.imp === 'air' ? 'ист. выбросов' : 'источник'} ${esc(x.src)}</td><td class="zv">${zvCodeBtn(l.zvCode)}${hazTag(l.zvKey)}${ignTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
+        (open && ss ? ss.map(x => `<tr class="sub${ignCls(l.zvKey)}"><td>${pill(x.status)}</td><td class="obj">${srcKindTxt(x.imp)} ${esc(x.src)}</td><td class="zv">${zvCodeBtn(l.zvCode)}${hazTag(l.zvKey)}${ignTag(l.zvKey)}</td>${VCOLS.map(c => valCell(x.vals[c[0]])).join('')}<td></td></tr>`).join('') : ''); }).join('')}
       </tbody></table>${list.length > shown.length ? `<div class="empty">Показано ${shown.length} из ${list.length.toLocaleString('ru-RU')}. Полный список — в выгрузке .xlsx.</div>` : ''}`;
     return;
   }
