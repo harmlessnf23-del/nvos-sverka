@@ -2762,10 +2762,13 @@ async function restoreSaved() {
   const m = meta?.settings;
   if (m) { if (m.year) SETTINGS.year = m.year; SETTINGS.yearAuto = m.yearAuto !== false; if (m.tol != null) SETTINGS.tol = m.tol; META.ran = !!m.ran; }
   const C = cfg || {}, F = files || {};
-  /* до версии 45 ДПНВОС и ПЭК были одним файлом; до версии 66 ДВОС был одним файлом — переносим их в карточки «выбросы» */
-  for (const [o, n] of [['DPNVOS', 'DPNVOS_A'], ['DVOS', 'DVOS_A'], ['PEK', 'PEK_A']]) if ((F[o] || C[o]) && !F[n] && !C[n]) {
+  /* до версии 45 ДПНВОС и ПЭК были одним файлом — переносим их в карточки «выбросы» */
+  for (const [o, n] of [['DPNVOS', 'DPNVOS_A'], ['PEK', 'PEK_A']]) if ((F[o] || C[o]) && !F[n] && !C[n]) {
     if (F[o]) { F[n] = F[o]; dbPutFile(n, F[o]); } if (C[o]) { C[n] = C[o]; dbPutCfg(n, C[o]); } delete F[o]; delete C[o]; dbDelDoc(o);
   }
+  /* старый единый ДВОС («общая»: выбросы и сбросы) не переносим — его нельзя корректно разбить,
+     иначе получится двойной счёт; удаляем, чтобы загрузить выбросы и сбросы заново двумя файлами */
+  if (F['DVOS'] || C['DVOS']) { delete F['DVOS']; delete C['DVOS']; dbDelDoc('DVOS'); }
   const docs = DOCS.filter(x => C[x]?.demo || F[x]);
   if (!docs.length) { if (m) renderParams(); return; }
   if (docs.some(x => C[x]?.demo)) { loadDemo(); for (const x of DOCS) if (!C[x]?.demo) delete state.pool[x]; }
