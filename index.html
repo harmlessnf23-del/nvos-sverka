@@ -881,13 +881,13 @@ const DOC_TYPES = {
     fld('sourceNo',  'Номер источника (S)', ['номер источника'], false, 18),
   ] },   /* ПЭК: проверяется только наличие отчёта за год; вещества и массы показываются справочно и не сверяются */
 };
-/* отдельные карточки загрузки: ДПНВОС, ДВОС и ПЭК — выбросы и сбросы разными файлами; реестр ОНВОС — общий.
+/* отдельные карточки загрузки: ДПНВОС и ПЭК — выбросы и сбросы разными файлами; реестр ОНВОС и ДВОС — общие.
    В сверке файлы выбросов и сбросов объединяются, у каждой строки остаётся пометка _imp (air / water). */
 const DPN_PREF = {
   air: { mass: [22, 'Масса для сверки, т (W)'], massVrv: [23, 'В пределах ВРВ, т (X)'], massOver: [24, 'Сверх лимита, т (Y)'] },
   water: { mass: [23, 'Масса для сверки, т (X)'], massVrv: [24, 'В пределах ВРС, т (Y)'], massOver: [25, 'Сверх лимита, т (Z)'] },
 };
-for (const [b, imp, suf] of [['DPNVOS', 'air', 'A'], ['DPNVOS', 'water', 'W'], ['DVOS', 'air', 'A'], ['DVOS', 'water', 'W'], ['PEK', 'air', 'A'], ['PEK', 'water', 'W']])
+for (const [b, imp, suf] of [['DPNVOS', 'air', 'A'], ['DPNVOS', 'water', 'W'], ['PEK', 'air', 'A'], ['PEK', 'water', 'W']])
   DOC_TYPES[b + '_' + suf] = { ...DOC_TYPES[b], base: b, imp, sub: imp === 'air' ? 'выбросы' : 'сбросы',
     /* ДПНВОС: масса для сверки — выбросы столбец W, сбросы столбец X (если такой столбец в файле есть, он важнее поиска по названию) */
     /* для «Сверхлимита»: выбросы — X (в пределах ВРВ) и Y (сверх лимита), сбросы — Y (в пределах ВРС) и Z (сверх лимита) */
@@ -1272,10 +1272,10 @@ async function reHead(docId, slot) {
 
 /* =====================================================================
    6. СОСТОЯНИЕ
-   Документы загружаются один раз: реестр ОНВОС; ДПНВОС, ДВОС и ПЭК — отдельными файлами выбросов и сбросов.
+   Четыре файла загружаются один раз: ДПНВОС (выбросы и сбросы в одном файле), реестр ОНВОС, ДВОС, ПЭК.
    Сверка идёт сразу по всем категориям, результат смотрится в разрезе декларации.
    ===================================================================== */
-const DOCS = ['ONVOS', 'DPNVOS_A', 'DPNVOS_W', 'DVOS_A', 'DVOS_W', 'PEK_A', 'PEK_W'];
+const DOCS = ['ONVOS', 'DPNVOS_A', 'DPNVOS_W', 'DVOS', 'PEK_A', 'PEK_W'];
 const state = { pool: {}, result: null, stale: false, page: 'docs', prevPage: 'decls', wsf: 'err', rule: '', view: 'objects', top: 'decls', cat: 'all', imp: 'all', dfl: 'all', dsort: 'issues', hideAcc: false, dcats: [], listQ: '', openLines: new Set(), filter: { sev: 'all', q: '', line: 'all', onlyBad: false, grp: 'zv' } };
 const SETTINGS = { year: new Date().getFullYear() - 1, yearAuto: true, tol: 0.000001, decl: '' };
 const slotOf = d => state.pool[d];
@@ -1401,11 +1401,10 @@ function analyze(S) {
       if (!norm(r.objectCode)) continue;
       const o = get(r);
       if (!o.dv) o.dv = { reports: new Map(), cat: catNorm(r.category) };
-      const imp = r._imp || '';
-      const k = norm(r.reportNo) + '|' + String(r.dateSubmit ?? '') + '|' + imp;
+      const k = norm(r.reportNo) + '|' + String(r.dateSubmit ?? '');
       let R = o.dv.reports.get(k);
-      if (!R) o.dv.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), date: toDate(r.dateSubmit), zv: new Map(), firstRow: r._row, imp });
-      addZv(R.zv, r, o, 'DVOS', imp);
+      if (!R) o.dv.reports.set(k, R = { no: r.reportNo == null ? '' : String(r.reportNo).trim(), date: toDate(r.dateSubmit), zv: new Map(), firstRow: r._row });
+      addZv(R.zv, r, o, 'DVOS', '');
     }
     const rank = { full: 0, partial: 1, expired: 2, future: 3, nodate: 4 };
     for (const o of objs.values()) if (o.dv) {
@@ -1414,7 +1413,7 @@ function analyze(S) {
         R.until = addYears(R.date, 7);
         R.valid = R.date > y1 ? 'future' : R.until < y0 ? 'expired' : (R.date <= y0 && R.until >= y1) ? 'full' : 'partial';
       }
-      o.dv.rep = mergeLatest(o.dv.reports, reps => [...reps.values()].sort((a, b) => rank[a.valid] - rank[b.valid] || (b.date || 0) - (a.date || 0))[0]);
+      o.dv.rep = [...o.dv.reports.values()].sort((a, b) => rank[a.valid] - rank[b.valid] || (b.date || 0) - (a.date || 0))[0];
     }
   }
   if (D.PEK) {
@@ -1485,13 +1484,11 @@ function analyze(S) {
     return { tot: A.sum, pek: A.pek, no: d.no, inns: [...d.inns], orgs: [...d.orgs], statuses: [...d.statuses], years: [...d.years].sort(), declared: d.declared.size, objects: list.length,
       cats, errors: list.reduce((a, x) => a + x.errors, 0), warnings: list.reduce((a, x) => a + x.warnings, 0) };
   }).sort((a, b) => (num(a.no) || 0) - (num(b.no) || 0));
-  /* класс опасности вещества — из ДВОС (столбец U), по всем строкам файлов, а не только по объекту */
-  const hz = new Map();
-  for (const dvDoc of slotsOfBase('DVOS')) { const dvAll = slotOf(dvDoc);
-    if (dvAll?.records && dvAll.map.hazard != null) for (const r of dvAll.records) {
-      const z = normZv(r.zvCode), h = hazNorm(r.hazard); if (!z || !h) continue;
-      let st = hz.get(z); if (!st) hz.set(z, st = new Set()); st.add(h);
-    }
+  /* класс опасности вещества — из ДВОС (столбец U), по всем строкам файла, а не только по объекту */
+  const hz = new Map(), dvAll = slotOf('DVOS');
+  if (dvAll?.records && dvAll.map.hazard != null) for (const r of dvAll.records) {
+    const z = normZv(r.zvCode), h = hazNorm(r.hazard); if (!z || !h) continue;
+    let st = hz.get(z); if (!st) hz.set(z, st = new Set()); st.add(h);
   }
   const hazard = {}; for (const [z, st] of hz) hazard[z] = [...st].sort().join(', ');
   HAZ = hazard;
@@ -1828,7 +1825,7 @@ const ICON = {
   upload: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
   file: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13l2 2 4-4"/></svg>',
 };
-const SHARED = { ONVOS: 'Весь реестр — объекты всех категорий, источники выбросов и сбросов', DPNVOS_A: 'Раздел «выбросы», все категории', DPNVOS_W: 'Раздел «сбросы», все категории', DVOS_A: 'Раздел «выбросы»; нужна для объектов II категории', DVOS_W: 'Раздел «сбросы»; нужна для объектов II категории',
+const SHARED = { ONVOS: 'Весь реестр — объекты всех категорий, источники выбросов и сбросов', DPNVOS_A: 'Раздел «выбросы», все категории', DPNVOS_W: 'Раздел «сбросы», все категории', DVOS: 'Общая — выбросы и сбросы; нужна для объектов II категории',
   PEK_A: 'Выбросы, III категория — наличие отчёта за год; фактический выброс/сброс г/с справочно', PEK_W: 'Сбросы, III категория — наличие отчёта за год; фактический выброс/сброс г/с справочно' };
 function renderRunState() {
   const loading = DOCS.some(d => slotOf(d)?.loading);
@@ -1946,7 +1943,7 @@ const SEARCH_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
 const DL_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 20h14"/></svg>';
 function renderTopbar() {
   const R = state.result, Y = R ? R.settings.year : SETTINGS.year, p = state.page;
-  const titles = { docs: ['Документы', 'Реестр ОНВОС · ДПНВОС: выбросы и сбросы · ДВОС: выбросы и сбросы · ПЭК: выбросы и сбросы'],
+  const titles = { docs: ['Документы', 'Реестр ОНВОС · ДПНВОС: выбросы и сбросы · ДВОС · ПЭК: выбросы и сбросы'],
     summary: [`Стакан задач за ${Y} год`, R ? `${R.decls.length.toLocaleString('ru-RU')} деклараций · ${R.objects.length.toLocaleString('ru-RU')} объектов` : ''],
     decls: ['Декларации', R ? `Отчётный год ${Y} · нажмите на декларацию, чтобы открыть её` : ''],
     decl: ['Декларация', `Отчётный год ${Y}`],
@@ -2688,9 +2685,7 @@ function demoData() {
     [7400001, 2025, E[1], E[0], E[2], 3, '0301', 'Азота диоксид', '0.001', '0001', 0.028]];
   /* сбросы — отдельным файлом с заголовками «Фактический сброс…» */
   const dpw = [dp[0].map(h => h.replace('выброс', 'сброс').replace('НДВ', 'НДС')), ...dp.slice(1).filter(r => r[8] === 'Взвешенные вещества')];
-  /* ДВОС: выбросы и сбросы отдельными файлами (заголовок сбросов — «Масса сбросов…») */
-  const dvw = [dv[0].map(h => h.replace('выбросов', 'сбросов')), [3100001, '10.03.2017', 2016, B[1], B[0], B[2], '2', 'Взвешенные вещества', '0001', 0.02, 'В1', 4]];
-  return { DPNVOS_A: dp.filter(r => r[8] !== 'Взвешенные вещества'), DPNVOS_W: dpw, ONVOS: on, DVOS_A: dv, DVOS_W: dvw, PEK_A: pek };
+  return { DPNVOS_A: dp.filter(r => r[8] !== 'Взвешенные вещества'), DPNVOS_W: dpw, ONVOS: on, DVOS: dv, PEK_A: pek };
 }
 function loadDemo() {
   const data = demoData();
@@ -2766,9 +2761,6 @@ async function restoreSaved() {
   for (const [o, n] of [['DPNVOS', 'DPNVOS_A'], ['PEK', 'PEK_A']]) if ((F[o] || C[o]) && !F[n] && !C[n]) {
     if (F[o]) { F[n] = F[o]; dbPutFile(n, F[o]); } if (C[o]) { C[n] = C[o]; dbPutCfg(n, C[o]); } delete F[o]; delete C[o]; dbDelDoc(o);
   }
-  /* старый единый ДВОС («общая»: выбросы и сбросы) не переносим — его нельзя корректно разбить,
-     иначе получится двойной счёт; удаляем, чтобы загрузить выбросы и сбросы заново двумя файлами */
-  if (F['DVOS'] || C['DVOS']) { delete F['DVOS']; delete C['DVOS']; dbDelDoc('DVOS'); }
   const docs = DOCS.filter(x => C[x]?.demo || F[x]);
   if (!docs.length) { if (m) renderParams(); return; }
   if (docs.some(x => C[x]?.demo)) { loadDemo(); for (const x of DOCS) if (!C[x]?.demo) delete state.pool[x]; }
